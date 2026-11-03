@@ -1,0 +1,4 @@
+// Copy to Config/Local.xcconfig (git-ignored) and fill in your own values.
+// HomeKit access is granted per bundle ID, so keep these stable once set.
+HOMERELAY_BUNDLE_PREFIX = com.yourname
+DEVELOPMENT_TEAM = YOURTEAMID

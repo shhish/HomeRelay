@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Manage HomeRelay API tokens.
+
+  homerelay-token add NAME [--read-only]   create a token and print it once
+  homerelay-token list                     show token names and scopes
+  homerelay-token revoke NAME              delete a token
+
+Only SHA-256 hashes are stored, in
+~/Library/Application Support/HomeRelay/tokens.json (override with
+HOMERELAY_TOKENS_FILE). The running service picks up changes immediately.
+"""
+
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import secrets
+import sys
+import tempfile
+from pathlib import Path
+
+DEFAULT = Path.home() / "Library/Application Support/HomeRelay/tokens.json"
+
+
+def path() -> Path:
+    return Path(os.environ.get("HOMERELAY_TOKENS_FILE", DEFAULT))
+
+
+def load() -> list[dict]:
+    p = path()
+    if not p.exists():
+        return []
+    return json.loads(p.read_text()).get("tokens", [])
+
+
+def save(tokens: list[dict]) -> None:
+    p = path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(p.parent, 0o700)
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".tokens-")
+    with os.fdopen(fd, "w") as f:
+        json.dump({"tokens": tokens}, f, indent=2)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, p)
+
+
+def add(name: str, read_only: bool) -> str:
+    tokens = load()
+    if any(t["name"] == name for t in tokens):
+        sys.exit(f"A token named '{name}' already exists; revoke it first.")
+    token = "hr_" + secrets.token_urlsafe(32)
+    tokens.append(
+        {
+            "name": name,
+            "scope": "read" if read_only else "control",
+            "sha256": hashlib.sha256(token.encode()).hexdigest(),
+            "created": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+    )
+    save(tokens)
+    return token
+
+
+def revoke(name: str) -> bool:
+    tokens = load()
+    kept = [t for t in tokens if t["name"] != name]
+    if len(kept) == len(tokens):
+        return False
+    save(kept)
+    return True
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    p_add = sub.add_parser("add", help="create a token")
+    p_add.add_argument("name")
+    p_add.add_argument(
+        "--read-only", action="store_true", help="can read and subscribe, cannot control"
+    )
+    sub.add_parser("list", help="list tokens")
+    p_rev = sub.add_parser("revoke", help="delete a token")
+    p_rev.add_argument("name")
+    args = parser.parse_args()
+
+    if args.command == "add":
+        token = add(args.name, args.read_only)
+        print(token)
+        print(
+            f"Saved '{args.name}' ({'read' if args.read_only else 'control'}). This is the only time the token is shown.",
+            file=sys.stderr,
+        )
+    elif args.command == "list":
+        tokens = load()
+        if not tokens:
+            print("No tokens yet. Create one with: homerelay-token add NAME")
+        for t in tokens:
+            print(f"{t['name']:<20} {t['scope']:<8} {t.get('created', '')}")
+    elif args.command == "revoke":
+        if not revoke(args.name):
+            sys.exit(f"No token named '{args.name}'")
+        print(f"Revoked '{args.name}'")
+
+
+if __name__ == "__main__":
+    main()

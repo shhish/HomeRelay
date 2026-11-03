@@ -1,0 +1,6 @@
+// Shared build settings. Personal values (signing team, bundle prefix) go in
+// Config/Local.xcconfig, which git ignores. Copy Config/Local.xcconfig.example.
+HOMERELAY_BUNDLE_PREFIX = com.example
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

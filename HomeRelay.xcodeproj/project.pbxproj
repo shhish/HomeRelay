@@ -1,0 +1,386 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0D40268611DB7D3A87174807 /* HomeKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB8A8489E87C2255F15EB9E2 /* HomeKitStore.swift */; };
+		127370D84869BEB125D3A8BD /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E55A52CDB2CCC2BD71D9ED /* App.swift */; };
+		201BE35B6162DA3F085FEB53 /* HomeKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF1CD053F724EAA6D8CA944E /* HomeKit.framework */; };
+		5521C02E7EDC99CD0C481A44 /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86EEE9A978625C9C52182A4A /* Support.swift */; };
+		75C599FB554355ABA717F3E2 /* HomeRelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = DDC657D37C10EB0D86D68E43 /* HomeRelayCore */; };
+		8F45E7D5473C91DF653F4B41 /* HomeKitNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE68F175FD3C89E2274A1356 /* HomeKitNames.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		5D98BDF02C92E3F9CB604C61 /* HomeRelay.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HomeRelay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		77D5E894B6F0DC235C8D1572 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		86EEE9A978625C9C52182A4A /* Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Support.swift; sourceTree = "<group>"; };
+		A9E55A52CDB2CCC2BD71D9ED /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		AB8A8489E87C2255F15EB9E2 /* HomeKitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeKitStore.swift; sourceTree = "<group>"; };
+		AE68F175FD3C89E2274A1356 /* HomeKitNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeKitNames.swift; sourceTree = "<group>"; };
+		B22051BBDCD7169EA0165FFF /* HomeRelayCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HomeRelayCore; path = Packages/HomeRelayCore; sourceTree = SOURCE_ROOT; };
+		DF1CD053F724EAA6D8CA944E /* HomeKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HomeKit.framework; path = System/Library/Frameworks/HomeKit.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D67C745805B9F945B817251E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				75C599FB554355ABA717F3E2 /* HomeRelayCore in Frameworks */,
+				201BE35B6162DA3F085FEB53 /* HomeKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3C42D8CD06926D5F909B167F = {
+			isa = PBXGroup;
+			children = (
+				4B790AF14EA6D659B466E272 /* Config */,
+				683B96E4C3E824A0ED290BF7 /* HomeRelay */,
+				EAE30390A51D6CF8C3903E13 /* Packages */,
+				F613634090B98643576AF5A8 /* Frameworks */,
+				C86CD80C1EA43C272494CA1A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4B790AF14EA6D659B466E272 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				77D5E894B6F0DC235C8D1572 /* Base.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		683B96E4C3E824A0ED290BF7 /* HomeRelay */ = {
+			isa = PBXGroup;
+			children = (
+				A9E55A52CDB2CCC2BD71D9ED /* App.swift */,
+				AE68F175FD3C89E2274A1356 /* HomeKitNames.swift */,
+				AB8A8489E87C2255F15EB9E2 /* HomeKitStore.swift */,
+				86EEE9A978625C9C52182A4A /* Support.swift */,
+			);
+			name = HomeRelay;
+			path = Sources/HomeRelay;
+			sourceTree = "<group>";
+		};
+		C86CD80C1EA43C272494CA1A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5D98BDF02C92E3F9CB604C61 /* HomeRelay.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		EAE30390A51D6CF8C3903E13 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				B22051BBDCD7169EA0165FFF /* HomeRelayCore */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		F613634090B98643576AF5A8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				DF1CD053F724EAA6D8CA944E /* HomeKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3C4713D0366670D344E8CA9C /* HomeRelay */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E04B740DA0B341BEDC95B688 /* Build configuration list for PBXNativeTarget "HomeRelay" */;
+			buildPhases = (
+				2BBA46ADCB09DFB1CF90B4A9 /* Sources */,
+				D67C745805B9F945B817251E /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HomeRelay;
+			packageProductDependencies = (
+				DDC657D37C10EB0D86D68E43 /* HomeRelayCore */,
+			);
+			productName = HomeRelay;
+			productReference = 5D98BDF02C92E3F9CB604C61 /* HomeRelay.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		043B02663772B52C3337E236 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					3C4713D0366670D344E8CA9C = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 3E673043007894C79BA81891 /* Build configuration list for PBXProject "HomeRelay" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 3C42D8CD06926D5F909B167F;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DD8FD9DB83104D6613A2D951 /* XCLocalSwiftPackageReference "Packages/HomeRelayCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C86CD80C1EA43C272494CA1A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3C4713D0366670D344E8CA9C /* HomeRelay */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2BBA46ADCB09DFB1CF90B4A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				127370D84869BEB125D3A8BD /* App.swift in Sources */,
+				8F45E7D5473C91DF653F4B41 /* HomeKitNames.swift in Sources */,
+				0D40268611DB7D3A87174807 /* HomeKitStore.swift in Sources */,
+				5521C02E7EDC99CD0C481A44 /* Support.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		6D10D142488F1D33981F4A48 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 77D5E894B6F0DC235C8D1572 /* Base.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		9B327A6095A0A853070890FD /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 77D5E894B6F0DC235C8D1572 /* Base.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C84A6229B7D5A7503FA5EA6C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HomeRelay.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HOMERELAY_BUNDLE_PREFIX).homerelay";
+				PRODUCT_NAME = HomeRelay;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Debug;
+		};
+		E304DCA4DD7C11AF267E6E04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HomeRelay.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HOMERELAY_BUNDLE_PREFIX).homerelay";
+				PRODUCT_NAME = HomeRelay;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3E673043007894C79BA81891 /* Build configuration list for PBXProject "HomeRelay" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D10D142488F1D33981F4A48 /* Debug */,
+				9B327A6095A0A853070890FD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E04B740DA0B341BEDC95B688 /* Build configuration list for PBXNativeTarget "HomeRelay" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C84A6229B7D5A7503FA5EA6C /* Debug */,
+				E304DCA4DD7C11AF267E6E04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		DD8FD9DB83104D6613A2D951 /* XCLocalSwiftPackageReference "Packages/HomeRelayCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HomeRelayCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		DDC657D37C10EB0D86D68E43 /* HomeRelayCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HomeRelayCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 043B02663772B52C3337E236 /* Project object */;
+}

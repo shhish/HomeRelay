@@ -1,0 +1,14 @@
+build/
+DerivedData/
+logs/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+Packages/HomeRelayCore/.build/
+Packages/HomeRelayCore/.swiftpm/
+.DS_Store
+
+# Personal and machine-specific files: never published.
+Config/Local.xcconfig
+AGENTS.local.md
+docs/APP_REVIEW_AND_AGENT_GUIDE.md
+local/
