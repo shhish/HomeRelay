@@ -54,6 +54,10 @@ On first launch macOS asks whether HomeRelay may access Home data. Until that's 
 cd Packages/HomeRelayCore && swift test
 ```
 
+## Contributing
+
+Issues and pull requests are welcome on GitHub. The repo is mirrored from a private Gitea, so merged PRs come back to GitHub with the next sync.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

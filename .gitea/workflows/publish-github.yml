@@ -1,0 +1,23 @@
+# Publishes main and v* tags to the public GitHub mirror after a privacy check.
+# The check and the target are defined on the publishing host, not in this file.
+name: Publish to GitHub
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: publish-github
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: oss-publish
+    timeout-minutes: 15
+    steps:
+      - uses: https://gitea.com/actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: "$HOME/.local/bin/oss-publish publish"
