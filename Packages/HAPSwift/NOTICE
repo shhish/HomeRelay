@@ -1,0 +1,12 @@
+HAPSwift (vendored)
+
+This directory contains a modified copy of hap-swift
+(https://github.com/acumen-dev/hap-swift), licensed under the Apache License,
+Version 2.0 (LICENSE.md). Copyright Monagle Pty Ltd and contributors.
+
+Modifications for HomeRelay (2026-11): durable pairing and identity storage,
+controller permissions, events to other controllers on writes, multi-frame
+encrypted responses and HTTP reassembly, a persisted configuration number with
+stable instance and accessory IDs, timed writes, corrected Bonjour TXT records
+and a fixed port. HOMERELAY.md describes each change and how it was verified.
+The Linux transport, the umbrella target and the demo were left out.

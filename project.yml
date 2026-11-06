@@ -6,6 +6,8 @@ options:
 packages:
   HomeRelayCore:
     path: Packages/HomeRelayCore
+  HAPSwift:
+    path: Packages/HAPSwift
 
 configFiles:
   Debug: Config/Base.xcconfig
@@ -21,6 +23,8 @@ targets:
       - path: Sources/HomeRelay
     dependencies:
       - package: HomeRelayCore
+      - package: HAPSwift
+        products: [HAPApple, HAPTransport, HAPCrypto, HAPCore]
       - sdk: HomeKit.framework
     settings:
       base:

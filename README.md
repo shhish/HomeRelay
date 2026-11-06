@@ -40,6 +40,7 @@ A few more:
 | Tell me the moment anything changes | `GET /events` (a live stream) |
 | What happened while I was offline? | `GET /events?since=4182` (replays the last 14 days) |
 | How warm was the office this week? | `GET /history?series=…&from=2026-11-01` (charts-ready, years back) |
+| Show "Guest mode" as a switch in the Home app | `POST /states` `{"name": "Guest mode"}` (with the HomeKit bridge on) |
 | Has the garage been open for the last 10 minutes? | `GET /history/summary?series=…&window=10m` |
 
 Use the names from the Home app (URL-encoded, and `Bedroom/Lamp` if two rooms both have one), or ids that never change.
@@ -79,6 +80,7 @@ Only Apple devices can control an Apple Home, and HomeKit accessories can't be s
 - **Live events.** A Server-Sent Events stream pushes every change: a light turned on, a door opened, a sensor tripped, a device going offline.
 - **Resumable.** Events are kept on disk for 14 days. Reconnect with the last number you saw and get what you missed, without duplicates.
 - **Long-term history.** Point it at a second disk and every value is kept: raw changes for 24 months, 5-minute summaries for 5 years, and hourly and daily ones for good (time-weighted averages, time on, time in each state). Times HomeRelay was off show as gaps in charts.
+- **States in the Home app.** Make your own switches and sensors ("Guest mode", "Laundry done") that clients and routines set, and pair them into Apple Home once as a HomeKit bridge, where Siri, scenes and Home automations can use them.
 - **Who did what.** Every change says whether the device reported it, a scene ran it, or a client wrote it, and which token did.
 - **A token per device.** `control` or `read-only`, stored only as hashes. A dashboard can look but not touch.
 - **Bonjour discovery.** Advertised over Bonjour as `_homerelay._tcp`, so gadgets don't need a hard-coded IP.
@@ -132,6 +134,7 @@ The whole API, with examples, is in [docs/API.md](docs/API.md).
 | `HOMERELAY_EVENT_LOG` | `…/HomeRelay/hot.sqlite` | Event log path; `off` disables it and stream resume |
 | `HOMERELAY_SAMPLE_MINUTES` | `60` | How often an unchanged value is still logged |
 | `HOMERELAY_HISTORY_DIR` | off | Long-term history directory on another disk; set by `scripts/history-setup` |
+| `HOMERELAY_BRIDGE` | off | `1` publishes States into Apple Home as a HomeKit bridge on `HOMERELAY_BRIDGE_PORT` (51827) |
 | `HOMERELAY_BACKUP_DIR` | `…/HomeRelay/backups` | Nightly history backups (internal disk) |
 
 Machine-specific values go in `Config/local.env` (one `KEY=VALUE` per line, not in git); `scripts/install.sh` passes them to the LaunchAgent.

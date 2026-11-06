@@ -13,3 +13,4 @@ AGENTS.local.md
 docs/APP_REVIEW_AND_AGENT_GUIDE.md
 local/
 Config/local.env
+Packages/HAPSwift/.build/

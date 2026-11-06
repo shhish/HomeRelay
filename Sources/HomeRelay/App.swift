@@ -15,6 +15,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     private var terminateSource: DispatchSourceSignal?
     private var history: History?
     private var states: StateStore?
+    private var stateBridge: StateBridge?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         let config = Config.fromEnvironment()
@@ -74,6 +75,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             let states = try StateStore(path: config.statesFile, hub: events)
             Task { await states.start() }
             self.states = states
+            if config.bridgeEnabled {
+                let bridge = StateBridge(directory: config.bridgeDir, port: config.bridgePort, states: states)
+                Task { await bridge.start() }
+                stateBridge = bridge
+            }
         } catch {
             Log.error("States unavailable: \(error)")
         }
@@ -84,6 +90,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             events: events,
             history: history,
             states: states,
+            bridgeStatus: stateBridge.map { bridge in
+                { @Sendable in
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.sortedKeys]
+                    return (try? encoder.encode(await bridge.status())) ?? Data("{}".utf8)
+                }
+            },
             version: Config.version,
             logReads: config.logReads,
             log: { Log.info($0) }

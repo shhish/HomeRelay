@@ -9,6 +9,8 @@ public struct APIRouter: Sendable {
     public let history: History?
     /// Virtual accessories; nil when not configured.
     public let states: StateStore?
+    /// The HomeKit bridge's status as JSON, when the app runs one.
+    public let bridgeStatus: (@Sendable () async -> Data)?
     public let version: String
     public let heartbeat: Duration
     /// Successful reads are frequent (an ESP32 may poll), so they are only
@@ -19,7 +21,7 @@ public struct APIRouter: Sendable {
 
     public init(
         backend: any HomeBackend, tokens: TokenStore, events: EventHub, history: History? = nil,
-        states: StateStore? = nil, version: String,
+        states: StateStore? = nil, bridgeStatus: (@Sendable () async -> Data)? = nil, version: String,
         heartbeat: Duration = .seconds(15), logReads: Bool = false, log: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.backend = backend
@@ -27,6 +29,7 @@ public struct APIRouter: Sendable {
         self.events = events
         self.history = history
         self.states = states
+        self.bridgeStatus = bridgeStatus
         self.version = version
         self.heartbeat = heartbeat
         self.logReads = logReads
@@ -142,6 +145,14 @@ public struct APIRouter: Sendable {
                 since = nil
             }
             return eventStream(since: since, store: q["store"], accessoryIds: q["accessory"].map { Set($0.split(separator: ",").map(String.init)) })
+        case ("GET", 1, "bridge"):
+            // Control only: while unpaired this includes the setup code.
+            try requireControl(token)
+            guard let bridgeStatus else { throw APIError.notFound("The HomeKit bridge is off (HOMERELAY_BRIDGE=1 turns it on)") }
+            return HTTPResponse(
+                status: 200, headers: Self.corsHeaders + [("Content-Type", "application/json; charset=utf-8")],
+                body: .data(await bridgeStatus())
+            )
         case ("GET", 1, "states"):
             return try json(await requireStates().list())
         case ("GET", 2, "states"):

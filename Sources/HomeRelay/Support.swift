@@ -19,6 +19,10 @@ struct Config: Sendable {
     var backupDir: URL
     /// Virtual accessories (States).
     var statesFile: URL
+    /// Publish States into Apple Home over HomeKit (`HOMERELAY_BRIDGE=1`).
+    var bridgeEnabled: Bool
+    var bridgePort: Int
+    var bridgeDir: URL
     var logReads: Bool
 
     static let defaultPort = 18796
@@ -49,6 +53,9 @@ struct Config: Sendable {
             historyDir: env["HOMERELAY_HISTORY_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0, directoryHint: .isDirectory) },
             backupDir: env["HOMERELAY_BACKUP_DIR"].map { URL(filePath: $0, directoryHint: .isDirectory) } ?? support.appending(path: "backups", directoryHint: .isDirectory),
             statesFile: env["HOMERELAY_STATES_FILE"].map { URL(filePath: $0) } ?? support.appending(path: "states.json"),
+            bridgeEnabled: env["HOMERELAY_BRIDGE"] == "1",
+            bridgePort: env["HOMERELAY_BRIDGE_PORT"].flatMap(Int.init) ?? 51827,
+            bridgeDir: support.appending(path: "bridge", directoryHint: .isDirectory),
             logReads: env["HOMERELAY_LOG_READS"] == "1"
         )
     }

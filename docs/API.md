@@ -35,6 +35,7 @@ Wherever a path takes `{ref}`, use an id or a name:
 | GET | `/events?accessory=ID,ID&since=SEQ` | read | Server-sent events stream of changes, resumable (see below) |
 | GET | `/events/stats?hours=24` | read | Event log size, position and event counts by type and origin over the window |
 | GET | `/states` | read | Virtual accessories ("States") and their values |
+| GET | `/bridge` | control | HomeKit bridge status; while unpaired, its setup code and `X-HM://` payload |
 | POST | `/states` | control | Create one: `{"name": "Guest mode", "kind": "switch", "resetAfter": 3600}` |
 | PUT | `/states/{ref}` | control | `{"on": true}`; also `name` and `resetAfter` (seconds, or null) |
 | DELETE | `/states/{ref}` | control | Remove a State |
@@ -145,6 +146,7 @@ States are on/off values HomeRelay keeps itself, for things the house should rem
 - A change is a `characteristic` event on accessory `state:<id>` (room `States`, characteristic `on`, characteristic id `state:<id>:on`), so the event log, history and routines treat States like any device. `origin` is `write`, `bridge` (the Home app) or `reset`.
 - `resetAfter` turns a State off that many seconds after it was turned on, even across restarts.
 - At most 149 States (one HomeKit bridge holds 150 accessories, one being the bridge). Each keeps its bridge accessory id (`aid`) for life, so the Home app keeps its room and automations.
+- **The HomeKit bridge** (`HOMERELAY_BRIDGE=1`) publishes every State as an accessory of a bridge called "HomeRelay States" on port 51827. Pair it once: Home app → Add Accessory → More options → HomeRelay States, then type the `setupCode` from `GET /bridge` (or scan `setupURI` rendered as a QR code). The pairing survives restarts and updates. A `contact` State reads open when on.
 
 ## History
 

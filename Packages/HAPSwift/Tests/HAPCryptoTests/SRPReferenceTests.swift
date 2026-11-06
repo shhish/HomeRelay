@@ -1,0 +1,352 @@
+// SRPReferenceTests.swift
+// Copyright 2026 Monagle Pty Ltd
+
+// Test vectors from homebridge/fast-srp (hap_test_data.ts + test_hap_vectors.ts).
+// These are the same vectors used by hap-nodejs — the reference HAP implementation.
+// Identity: "alice", Password: "password123" (not "Pair-Setup").
+// Group: RFC 5054 3072-bit, Hash: SHA-512.
+
+import Foundation
+import Testing
+import Crypto
+@testable import HAPCrypto
+
+@Suite("SRP Reference Vector Tests")
+struct SRPReferenceTests {
+
+    // MARK: - Known Test Vectors
+
+    // Client private key (a)
+    static let aHex = "60975527035CF2AD1989806F0407210BC81EDC04E2762A56AFD529DDDA2D4393"
+
+    // Server private key (b)
+    static let bHex = "E487CB59D31AC550471E81F00F6928E01DDA08E974A004F49E61F5D105284D20"
+
+    // Salt (s)
+    static let saltHex = "BEB25379D1A8581EB5A727673A2441EE"
+
+    // Expected k = H(N | pad(g))
+    static let kHex = "a9c2e2559bf0ebb53f0cbbf62282906bede7f2182f00678211fbd5bde5b285033a4993503b87397f9be5ec02080fedbc0835587ad039060879b8621e8c3659e0"
+
+    // Expected x = H(s | H(I | ":" | P))
+    static let xHex = "b149ecb0946b0b206d77e73d95deb7c41bd12e86a5e2eea3893d5416591a002ff94bfea384dc0e1c550f7ed4d5a9d2ad1f1526f01c56b5c10577730cc4a4d709"
+
+    // Expected u = H(pad(A) | pad(B))
+    static let uHex = "03AE5F3C3FA9EFF1A50D7DBB8D2F60A1EA66EA712D50AE976EE34641A1CD0E51C4683DA383E8595D6CB56A15D5FBC7543E07FBDDD316217E01A391A18EF06DFF"
+
+    // Expected K (session key)
+    static let KHex = "5CBC219DB052138EE1148C71CD4498963D682549CE91CA24F098468F06015BEB6AF245C2093F98C3651BCA83AB8CAB2B580BBF02184FEFDF26142F73DF95AC50"
+
+    // Expected M1 (client proof)
+    static let M1Hex = "5f7c14ab57ed0e94fd1d78c6b4dd09ed7e340b7e05d419a9fd760f6b35e523d1310777a1ae1d2826f596f3a85116cc457c7c964d4f44ded5559da818c88b617f"
+
+    // Expected A (client public key)
+    static let AHex = """
+    FAB6F5D2615D1E323512E7991CC37443F487DA604CA8C9230FCB04E541DCE628\
+    0B27CA4680B0374F179DC3BDC7553FE62459798C701AD864A91390A28C93B644\
+    ADBF9C00745B942B79F9012A21B9B78782319D83A1F8362866FBD6F46BFC0DDB\
+    2E1AB6E4B45A9906B82E37F05D6F97F6A3EB6E182079759C4F6847837B62321A\
+    C1B4FA68641FCB4BB98DD697A0C73641385F4BAB25B793584CC39FC8D48D4BD8\
+    67A9A3C10F8EA12170268E34FE3BBE6FF89998D60DA2F3E4283CBEC1393D52AF\
+    724A57230C604E9FBCE583D7613E6BFFD67596AD121A8707EEC469449570336\
+    86A155F644D5C5863B48F61BDBF19A53EAB6DAD0A186B8C152E5F5D8CAD4B0EF8\
+    AA4EA5008834C3CD342E5E0F167AD04592CD8BD279639398EF9E114DFAAAB919\
+    E14E850989224DDD98576D79385D2210902E9F9B1F2D86CFA47EE244635465F7\
+    1058421A0184BE51DD10CC9D079E6F1604E7AA9B7CF7883C7D4CE12B06EBE160\
+    81E23F27A231D18432D7D1BB55C28AE21FFCF005F57528D15A88881BB3BBB7FE
+    """
+
+    // Expected B (server public key)
+    static let BHex = """
+    40F57088A482D4C7733384FE0D301FDDCA9080AD7D4F6FDF09A01006C3CB6D56\
+    2E41639AE8FA21DE3B5DBA7585B275589BDB279863C562807B2B99083CD1429C\
+    DBE89E25BFBD7E3CAD3173B2E3C5A0B174DA6D5391E6A06E465F037A40062548\
+    39A56BF76DA84B1C94E0AE208576156FE5C140A4BA4FFC9E38C3B07B88845FC6\
+    F7DDDA93381FE0CA6084C4CD2D336E5451C464CCB6EC65E7D16E548A273E8262\
+    84AF2559B6264274215960FFF47BDD63D3AFF064D6137AF769661C9D4FEE4738\
+    2603C88EAA0980581D07758461B777E4356DDA5835198B51FEEA308D70F75450\
+    B71675C08C7D8302FD7539DD1FF2A11CB4258AA70D234436AA42B6A0615F3F91\
+    5D55CC3B966B2716B36E4D1A06CE5E5D2EA3BEE5A1270E8751DA45B60B997B0F\
+    FDB0F9962FEE4F03BEE780BA0A845B1D9271421783AE6601A61EA2E342E4F2E8\
+    BC935A409EAD19F221BD1B74E2964DD19FC845F60EFC09338B60B6B256D8CAC8\
+    89CCA306CC370A0B18C8B886E95DA0AF5235FEF4393020D2B7F3056904759042
+    """
+
+    // Expected v (verifier)
+    static let vHex = """
+    9B5E061701EA7AEB39CF6E3519655A853CF94C75CAF2555EF1FAF759BB79CB47\
+    7014E04A88D68FFC05323891D4C205B8DE81C2F203D8FAD1B24D2C109737F1BE\
+    BBD71F912447C4A03C26B9FAD8EDB3E780778E302529ED1EE138CCFC36D4BA31\
+    3CC48B14EA8C22A0186B222E655F2DF5603FD75DF76B3B08FF8950069ADD03A7\
+    54EE4AE88587CCE1BFDE36794DBAE4592B7B904F442B041CB17AEBAD1E3AEBE3\
+    CBE99DE65F4BB1FA00B0E7AF06863DB53B02254EC66E781E3B62A8212C86BEB0\
+    D50B5BA6D0B478D8C4E9BBCEC21765326FBD14058D2BBDE2C33045F03873E539\
+    48D78B794F0790E48C36AED6E880F557427B2FC06DB5E1E2E1D7E661AC482D18\
+    E528D7295EF7437295FF1A72D402771713F16876DD050AE5B7AD53CCB90855C9\
+    3956648358ADFD966422F52498732D68D1D7FBEF10D78034AB8DCB6F0FCF885C\
+    C2B2EA2C3E6AC86609EA058A9DA8CC63531DC915414DF568B09482DDAC1954DE\
+    C7EB714F6FF7D44CD5B86F6BD115810930637C01D0F6013BC9740FA2C633BA89
+    """
+
+    // Expected S (premaster secret)
+    static let SHex = """
+    F1036FECD017C8239C0D5AF7E0FCF0D408B009E36411618A60B23AABBFC38339\
+    7268231214BAACDC94CA1C53F442FB51C1B027C318AE238E16414D60D1881B66\
+    486ADE10ED02BA33D098F6CE9BCF1BB0C46CA2C47F2F174C59A9C61E2560899B\
+    83EF61131E6FB30B714F4E43B735C9FE6080477C1B83E4093E4D456B9BCA492C\
+    F9339D45BC42E67CE6C02C243E49F5DA42A869EC855780E84207B8A1EA6501C4\
+    78AAC0DFD3D22614F531A00D826B7954AE8B14A985A429315E6DD3664CF47181\
+    496A94329CDE8005CAE63C2F9CA4969BFE84001924037C446559BDBB9DB9D4DD\
+    142FBCD75EEF2E162C843065D99E8F05762C4DB7ABD9DB203D41AC85A58C05BD\
+    4E2DBF822A934523D54E0653D376CE8B56DCB4527DDDC1B994DC7509463A7468\
+    D7F02B1BEB1685714CE1DD1E71808A137F788847B7C6B7BFA1364474B3B7E894\
+    78954F6A8E68D45B85A88E4EBFEC13368EC0891C3BC86CF50097880178D86135\
+    E728723458538858D715B7B247406222C1019F53603F016952D4971008 58824C
+    """
+
+    // MARK: - Helper
+
+    private func hex(_ s: String) -> Data {
+        Data(hexString: s.replacingOccurrences(of: " ", with: ""))!
+    }
+
+    /// Compute x = H(salt | H(I | ":" | P)) with arbitrary identity/password.
+    private func computeX(salt: Data, identity: String, password: String) -> CryptoInt {
+        var innerHasher = SHA512()
+        innerHasher.update(data: Data(identity.utf8))
+        innerHasher.update(data: Data(":".utf8))
+        innerHasher.update(data: Data(password.utf8))
+        let innerHash = Data(innerHasher.finalize())
+
+        var outerHasher = SHA512()
+        outerHasher.update(data: salt)
+        outerHasher.update(data: innerHash)
+        return CryptoInt(Data(outerHasher.finalize()))
+    }
+
+    /// Compute M1 = H(H(N) XOR H(g) | H(I) | s | A | B | K) with arbitrary identity.
+    private func computeM1(identity: String, A: Data, B: Data, K: Data, salt: Data) -> Data {
+        let nData = SRPConstants.N.data   // 384 bytes
+        let gData = SRPConstants.g.data   // [0x05] — 1 byte, minimal
+
+        let hashN = Data(SHA512.hash(data: nData))
+        let hashG = Data(SHA512.hash(data: gData))
+
+        var xorNG = Data(count: 64)
+        for i in 0 ..< 64 {
+            xorNG[i] = hashN[i] ^ hashG[i]
+        }
+
+        let hashI = Data(SHA512.hash(data: Data(identity.utf8)))
+
+        var hasher = SHA512()
+        hasher.update(data: xorNG)
+        hasher.update(data: hashI)
+        hasher.update(data: salt)
+        hasher.update(data: A)
+        hasher.update(data: B)
+        hasher.update(data: K)
+        return Data(hasher.finalize())
+    }
+
+    // MARK: - Tests
+
+    @Test("k = H(N | pad(g)) matches reference")
+    func verifyK() {
+        let expected = hex(Self.kHex)
+        // k is computed in SRPConstants — just check it
+        let kData = SRPConstants.k.data
+        #expect(kData == expected, "k does not match reference vector")
+    }
+
+    @Test("x = H(s | H(I:P)) matches reference")
+    func verifyX() {
+        let expected = hex(Self.xHex)
+        let salt = hex(Self.saltHex)
+        let x = computeX(salt: salt, identity: "alice", password: "password123")
+        #expect(x.data == expected, "x does not match reference vector")
+    }
+
+    @Test("v = g^x mod N matches reference")
+    func verifyVerifier() {
+        let expected = hex(Self.vHex)
+        let salt = hex(Self.saltHex)
+        let x = computeX(salt: salt, identity: "alice", password: "password123")
+        let v = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        let vData = v.paddedData(to: 384)
+        #expect(vData == expected, "verifier v does not match reference vector")
+    }
+
+    @Test("A = g^a mod N matches reference")
+    func verifyA() {
+        let expected = hex(Self.AHex)
+        let a = CryptoInt(hex(Self.aHex))
+        let A = CryptoInt.modPow(base: SRPConstants.g, exponent: a, modulus: SRPConstants.N)
+        let AData = A.paddedData(to: 384)
+        #expect(AData == expected, "A does not match reference vector")
+    }
+
+    @Test("B = (k*v + g^b) mod N matches reference")
+    func verifyB() {
+        let expected = hex(Self.BHex)
+        let salt = hex(Self.saltHex)
+        let x = computeX(salt: salt, identity: "alice", password: "password123")
+        let v = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        let b = CryptoInt(hex(Self.bHex))
+        let gb = CryptoInt.modPow(base: SRPConstants.g, exponent: b, modulus: SRPConstants.N)
+        let kv = (SRPConstants.k * v) % SRPConstants.N
+        let B = (kv + gb) % SRPConstants.N
+        let BData = B.paddedData(to: 384)
+        #expect(BData == expected, "B does not match reference vector")
+    }
+
+    @Test("u = H(pad(A) | pad(B)) matches reference")
+    func verifyU() {
+        let expected = hex(Self.uHex)
+        let AData = hex(Self.AHex)
+        let BData = hex(Self.BHex)
+
+        // Pad A and B to 384 bytes
+        let paddedA = CryptoInt(AData).paddedData(to: 384)
+        let paddedB = CryptoInt(BData).paddedData(to: 384)
+
+        var uHasher = SHA512()
+        uHasher.update(data: paddedA)
+        uHasher.update(data: paddedB)
+        let u = CryptoInt(Data(uHasher.finalize()))
+        #expect(u.data == expected, "u does not match reference vector")
+    }
+
+    @Test("S (server-side) matches reference")
+    func verifyS_Server() {
+        let expected = hex(Self.SHex)
+        let salt = hex(Self.saltHex)
+        let x = computeX(salt: salt, identity: "alice", password: "password123")
+        let v = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+
+        let A = CryptoInt(hex(Self.AHex))
+        let b = CryptoInt(hex(Self.bHex))
+        let u = CryptoInt(hex(Self.uHex))
+
+        // S = (A * v^u)^b mod N
+        let vu = CryptoInt.modPow(base: v, exponent: u, modulus: SRPConstants.N)
+        let avu = (A * vu) % SRPConstants.N
+        let S = CryptoInt.modPow(base: avu, exponent: b, modulus: SRPConstants.N)
+        let SData = S.paddedData(to: 384)
+        #expect(SData == expected, "S (server) does not match reference vector")
+    }
+
+    @Test("S (client-side) matches reference")
+    func verifyS_Client() {
+        let expected = hex(Self.SHex)
+        let salt = hex(Self.saltHex)
+        let x = computeX(salt: salt, identity: "alice", password: "password123")
+
+        let B = CryptoInt(hex(Self.BHex))
+        let a = CryptoInt(hex(Self.aHex))
+        let u = CryptoInt(hex(Self.uHex))
+
+        // S = (B - k * g^x)^(a + u * x) mod N
+        let gx = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        let kgx = (SRPConstants.k * gx) % SRPConstants.N
+
+        let base: CryptoInt
+        if B > kgx {
+            base = B - kgx
+        } else {
+            base = (B + SRPConstants.N) - kgx
+        }
+
+        let ux = u * x
+        let exp = a + ux
+        let S = CryptoInt.modPow(base: base, exponent: exp, modulus: SRPConstants.N)
+        let SData = S.paddedData(to: 384)
+        #expect(SData == expected, "S (client) does not match reference vector")
+    }
+
+    @Test("K = H(S) matches reference")
+    func verifyK_SessionKey() {
+        let expected = hex(Self.KHex)
+        let SData = hex(Self.SHex)
+        // Pad S to 384 bytes (it should already be 384, but be safe)
+        let SPadded = CryptoInt(SData).paddedData(to: 384)
+        let K = Data(SHA512.hash(data: SPadded))
+        #expect(K == expected, "K does not match reference vector")
+    }
+
+    @Test("M1 = H(H(N) XOR H(g) | H(I) | s | A | B | K) matches reference")
+    func verifyM1() {
+        let expected = hex(Self.M1Hex)
+        let salt = hex(Self.saltHex)
+        let AData = CryptoInt(hex(Self.AHex)).paddedData(to: 384)
+        let BData = CryptoInt(hex(Self.BHex)).paddedData(to: 384)
+        let K = hex(Self.KHex)
+
+        let M1 = computeM1(identity: "alice", A: AData, B: BData, K: K, salt: salt)
+        #expect(M1 == expected, "M1 does not match reference vector")
+    }
+
+    @Test("full handshake against reference vectors — all intermediate values")
+    func fullReferenceHandshake() {
+        let salt = hex(Self.saltHex)
+        let identity = "alice"
+        let password = "password123"
+
+        // Step 1: Compute x
+        let x = computeX(salt: salt, identity: identity, password: password)
+        #expect(x.data == hex(Self.xHex), "x mismatch")
+
+        // Step 2: Compute verifier v = g^x mod N
+        let v = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        #expect(v.paddedData(to: 384) == hex(Self.vHex), "v mismatch")
+
+        // Step 3: Server computes B = (k*v + g^b) mod N
+        let b = CryptoInt(hex(Self.bHex))
+        let gb = CryptoInt.modPow(base: SRPConstants.g, exponent: b, modulus: SRPConstants.N)
+        let kv = (SRPConstants.k * v) % SRPConstants.N
+        let B = (kv + gb) % SRPConstants.N
+        #expect(B.paddedData(to: 384) == hex(Self.BHex), "B mismatch")
+
+        // Step 4: Client computes A = g^a mod N
+        let a = CryptoInt(hex(Self.aHex))
+        let A = CryptoInt.modPow(base: SRPConstants.g, exponent: a, modulus: SRPConstants.N)
+        #expect(A.paddedData(to: 384) == hex(Self.AHex), "A mismatch")
+
+        // Step 5: u = H(pad(A) | pad(B))
+        let paddedA = A.paddedData(to: 384)
+        let paddedB = B.paddedData(to: 384)
+        var uHasher = SHA512()
+        uHasher.update(data: paddedA)
+        uHasher.update(data: paddedB)
+        let u = CryptoInt(Data(uHasher.finalize()))
+        #expect(u.data == hex(Self.uHex), "u mismatch")
+
+        // Step 6: Server-side S = (A * v^u)^b mod N
+        let vu = CryptoInt.modPow(base: v, exponent: u, modulus: SRPConstants.N)
+        let avu = (A * vu) % SRPConstants.N
+        let S_server = CryptoInt.modPow(base: avu, exponent: b, modulus: SRPConstants.N)
+        #expect(S_server.paddedData(to: 384) == hex(Self.SHex), "S (server) mismatch")
+
+        // Step 7: Client-side S = (B - k*g^x)^(a + u*x) mod N
+        let gx = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        let kgx = (SRPConstants.k * gx) % SRPConstants.N
+        let clientBase: CryptoInt
+        if B > kgx {
+            clientBase = B - kgx
+        } else {
+            clientBase = (B + SRPConstants.N) - kgx
+        }
+        let ux = u * x
+        let exp = a + ux
+        let S_client = CryptoInt.modPow(base: clientBase, exponent: exp, modulus: SRPConstants.N)
+        #expect(S_client.paddedData(to: 384) == hex(Self.SHex), "S (client) mismatch")
+
+        // Step 8: K = H(S)
+        let K = Data(SHA512.hash(data: S_server.paddedData(to: 384)))
+        #expect(K == hex(Self.KHex), "K mismatch")
+
+        // Step 9: M1 = H(H(N) XOR H(g) | H(I) | s | A | B | K)
+        let M1 = computeM1(identity: identity, A: paddedA, B: paddedB, K: K, salt: salt)
+        #expect(M1 == hex(Self.M1Hex), "M1 mismatch")
+    }
+}

@@ -38,3 +38,11 @@
 - The marker is re-checked every run, and the app also refuses a directory on the boot volume.
 - `/history/summary` reads the event log, not the disk, so routines keep working while the disk is away.
 - `/health/history` is `503` when the disk has been missing for an hour, archiving lags a day, or events were dropped in the last day; Switchboard's `homerelay_history` probe watches it.
+
+## States and the HomeKit bridge
+
+- `StateStore` (HomeRelayCore) keeps States in `states.json`; changes publish `characteristic` events on accessory `state:<id>`, so they're logged, archived and streamed like devices.
+- `StateBridge` (app) publishes States through a vendored, hardened copy of hap-swift (`Packages/HAPSwift`, Apache-2.0; NOTICE and HOMERELAY.md describe the changes and their verification). Identity, pairings and layout live in `~/Library/Application Support/HomeRelay/bridge/` (0700); a paired bridge never mints a new identity. Each State keeps its accessory id for life; the configuration number changes only when the layout does.
+- Home-app writes to a switch State arrive through the bridge's write handler and set the State with origin `bridge` and `by: home-app`. Sensor States are read-only in HomeKit.
+- Pair setup is refused after 100 failed attempts until HomeRelay restarts (HAP 5.6.1). The setup code is only returned by `/bridge`, to control tokens, while unpaired.
+- Not covered by automated tests: pairing and automations with a real iPhone and Home hub. The loopback controller tests (aiohomekit) live in the fork's `e2e/`.

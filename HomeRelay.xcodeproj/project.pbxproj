@@ -10,19 +10,26 @@
 		0D40268611DB7D3A87174807 /* HomeKitStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB8A8489E87C2255F15EB9E2 /* HomeKitStore.swift */; };
 		127370D84869BEB125D3A8BD /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E55A52CDB2CCC2BD71D9ED /* App.swift */; };
 		201BE35B6162DA3F085FEB53 /* HomeKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF1CD053F724EAA6D8CA944E /* HomeKit.framework */; };
+		49417ED725E0B87B4C6B4BF1 /* HAPCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = A3CB974D399E6EF62D319C1E /* HAPCrypto */; };
 		5521C02E7EDC99CD0C481A44 /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86EEE9A978625C9C52182A4A /* Support.swift */; };
+		56862B3B8DC0CB9EEEBB84B2 /* HAPTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 67CBD63D32157AD256D54815 /* HAPTransport */; };
 		75C599FB554355ABA717F3E2 /* HomeRelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = DDC657D37C10EB0D86D68E43 /* HomeRelayCore */; };
+		7FB1FDC17F459048DDC1B5EC /* HAPCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2FAB160DE537320C20644B7A /* HAPCore */; };
+		83653820479282E25A18CD5C /* StateBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975AF89FA06E63970D6A5EC4 /* StateBridge.swift */; };
 		8F45E7D5473C91DF653F4B41 /* HomeKitNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE68F175FD3C89E2274A1356 /* HomeKitNames.swift */; };
+		BD36E876E5DD4087152F4D43 /* HAPApple in Frameworks */ = {isa = PBXBuildFile; productRef = DA5ABBBEF56073BE6DA134FD /* HAPApple */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		5D98BDF02C92E3F9CB604C61 /* HomeRelay.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HomeRelay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		77D5E894B6F0DC235C8D1572 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		86EEE9A978625C9C52182A4A /* Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Support.swift; sourceTree = "<group>"; };
+		975AF89FA06E63970D6A5EC4 /* StateBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateBridge.swift; sourceTree = "<group>"; };
 		A9E55A52CDB2CCC2BD71D9ED /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		AB8A8489E87C2255F15EB9E2 /* HomeKitStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeKitStore.swift; sourceTree = "<group>"; };
 		AE68F175FD3C89E2274A1356 /* HomeKitNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeKitNames.swift; sourceTree = "<group>"; };
 		B22051BBDCD7169EA0165FFF /* HomeRelayCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HomeRelayCore; path = Packages/HomeRelayCore; sourceTree = SOURCE_ROOT; };
+		D44B0E2F3D1B4F7B7FBB4EAD /* HAPSwift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HAPSwift; path = Packages/HAPSwift; sourceTree = SOURCE_ROOT; };
 		DF1CD053F724EAA6D8CA944E /* HomeKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HomeKit.framework; path = System/Library/Frameworks/HomeKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -32,6 +39,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				75C599FB554355ABA717F3E2 /* HomeRelayCore in Frameworks */,
+				BD36E876E5DD4087152F4D43 /* HAPApple in Frameworks */,
+				56862B3B8DC0CB9EEEBB84B2 /* HAPTransport in Frameworks */,
+				49417ED725E0B87B4C6B4BF1 /* HAPCrypto in Frameworks */,
+				7FB1FDC17F459048DDC1B5EC /* HAPCore in Frameworks */,
 				201BE35B6162DA3F085FEB53 /* HomeKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -64,6 +75,7 @@
 				A9E55A52CDB2CCC2BD71D9ED /* App.swift */,
 				AE68F175FD3C89E2274A1356 /* HomeKitNames.swift */,
 				AB8A8489E87C2255F15EB9E2 /* HomeKitStore.swift */,
+				975AF89FA06E63970D6A5EC4 /* StateBridge.swift */,
 				86EEE9A978625C9C52182A4A /* Support.swift */,
 			);
 			name = HomeRelay;
@@ -81,6 +93,7 @@
 		EAE30390A51D6CF8C3903E13 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
+				D44B0E2F3D1B4F7B7FBB4EAD /* HAPSwift */,
 				B22051BBDCD7169EA0165FFF /* HomeRelayCore */,
 			);
 			path = Packages;
@@ -111,6 +124,10 @@
 			name = HomeRelay;
 			packageProductDependencies = (
 				DDC657D37C10EB0D86D68E43 /* HomeRelayCore */,
+				DA5ABBBEF56073BE6DA134FD /* HAPApple */,
+				67CBD63D32157AD256D54815 /* HAPTransport */,
+				A3CB974D399E6EF62D319C1E /* HAPCrypto */,
+				2FAB160DE537320C20644B7A /* HAPCore */,
 			);
 			productName = HomeRelay;
 			productReference = 5D98BDF02C92E3F9CB604C61 /* HomeRelay.app */;
@@ -141,6 +158,7 @@
 			mainGroup = 3C42D8CD06926D5F909B167F;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				9204F698B12D8897029A6186 /* XCLocalSwiftPackageReference "Packages/HAPSwift" */,
 				DD8FD9DB83104D6613A2D951 /* XCLocalSwiftPackageReference "Packages/HomeRelayCore" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -161,6 +179,7 @@
 				127370D84869BEB125D3A8BD /* App.swift in Sources */,
 				8F45E7D5473C91DF653F4B41 /* HomeKitNames.swift in Sources */,
 				0D40268611DB7D3A87174807 /* HomeKitStore.swift in Sources */,
+				83653820479282E25A18CD5C /* StateBridge.swift in Sources */,
 				5521C02E7EDC99CD0C481A44 /* Support.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -369,6 +388,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		9204F698B12D8897029A6186 /* XCLocalSwiftPackageReference "Packages/HAPSwift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/HAPSwift;
+		};
 		DD8FD9DB83104D6613A2D951 /* XCLocalSwiftPackageReference "Packages/HomeRelayCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/HomeRelayCore;
@@ -376,6 +399,22 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		2FAB160DE537320C20644B7A /* HAPCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HAPCore;
+		};
+		67CBD63D32157AD256D54815 /* HAPTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HAPTransport;
+		};
+		A3CB974D399E6EF62D319C1E /* HAPCrypto */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HAPCrypto;
+		};
+		DA5ABBBEF56073BE6DA134FD /* HAPApple */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HAPApple;
+		};
 		DDC657D37C10EB0D86D68E43 /* HomeRelayCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HomeRelayCore;

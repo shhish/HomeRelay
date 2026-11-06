@@ -26,6 +26,7 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_homerelay._tcp</string>
+        <string>_hap._tcp</string>
     </array>
 
     <!-- Background service: no Dock icon, no automatic termination, no App Nap. -->
