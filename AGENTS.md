@@ -6,3 +6,4 @@ This repository is public. Never commit personal values: names, emails, home IPs
 - `docs/DESIGN.md` records what's in and out of scope.
 - Run `cd Packages/HomeRelayCore && swift test` after changes. `scripts/smoke.py` checks a running instance; only use `--write` on an accessory that's fine to toggle.
 - Never print, log or commit token values.
+- Publishing: this repo is mirrored to GitHub by CI after every push to `main` and every `v*` tag, so anything that reaches `main` is public at once. Never push to GitHub directly.
