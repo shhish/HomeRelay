@@ -5,7 +5,7 @@
 **Your Apple Home, as a local API anything can talk to.**
 
 An ESP32 on your desk, a Raspberry Pi, a dashboard, a shell script: none of them can speak HomeKit.<br/>
-HomeRelay runs on an always-on Mac and lets them all see and control every light, lock, sensor and scene in your Home app.
+HomeRelay runs on an always-on Mac and lets them read and control every light, lock, sensor and scene in your Home app.
 
 [![MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 ![Swift](https://img.shields.io/badge/Swift-F05138?style=flat-square&logo=swift&logoColor=white)
@@ -75,15 +75,15 @@ Every client talks plain HTTP with its own token: REST to read and change things
 
 Only Apple devices can control an Apple Home, and HomeKit accessories can't be shared with anything else. So a Mac that stays on, signed in to your Home, does it on everyone else's behalf.
 
-## ✨ Why it's nice to build on
+## ✨ What you get
 
-- ⚡ **Live events.** A Server-Sent Events stream pushes every change: a light turned on, a door opened, a sensor tripped, a device going offline.
-- ⏪ **Never miss one.** Events are kept on disk for 14 days. Reconnect with the last number you saw and get exactly what you missed, with no duplicates.
-- 🏷️ **Knows who did what.** Every change says whether the device reported it, a scene ran it, or a client wrote it, and which token did.
-- 🔑 **A token per device.** `control` or `read-only`, stored only as hashes. A dashboard can look but not touch.
-- 📡 **Finds itself.** Advertised over Bonjour as `_homerelay._tcp`, so gadgets don't need a hard-coded IP.
-- 🐢 **Kind to batteries.** Sleepy battery sensors are only woken when needed, and a dead device can't stall every request.
-- 🤏 **Small enough for a microcontroller.** `?compact=1` trims responses down to just the state.
+- **Live events.** A Server-Sent Events stream pushes every change: a light turned on, a door opened, a sensor tripped, a device going offline.
+- **Resumable.** Events are kept on disk for 14 days. Reconnect with the last number you saw and get what you missed, without duplicates.
+- **Who did what.** Every change says whether the device reported it, a scene ran it, or a client wrote it, and which token did.
+- **A token per device.** `control` or `read-only`, stored only as hashes. A dashboard can look but not touch.
+- **Bonjour discovery.** Advertised over Bonjour as `_homerelay._tcp`, so gadgets don't need a hard-coded IP.
+- **Easy on batteries.** Battery sensors are only woken when needed, and one dead device can't stall every request.
+- **Compact responses.** `?compact=1` returns only the state, which suits a microcontroller.
 
 > [!WARNING]
 > HomeRelay is meant for your home network. Don't expose it to the internet.
@@ -100,7 +100,7 @@ scripts/homerelay-token add dash --read-only
 scripts/smoke.py                        # checks the read paths
 ```
 
-The first time it starts, macOS asks whether HomeRelay may use your Home data. Say yes. (If you said no, change it in System Settings → Privacy & Security → Home.)
+The first time it starts, macOS asks whether HomeRelay may use your Home data. Allow it; if you didn't, change it in System Settings → Privacy & Security → Home.
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://my-mac.local:18796/api/v1/scenes
@@ -146,7 +146,7 @@ cd Packages/HomeRelayCore && swift test
 ```
 </details>
 
-## 🤝 Part of a family
+## 🤝 Related projects
 
 - **[Orb](https://github.com/shhish/orb)**: a round ESP32 display that shows your rooms and runs scenes through HomeRelay.
 - **[Switchboard](https://github.com/shhish/switchboard)**: gives AI agents (Claude, Codex, ChatGPT) Apple Home tools through HomeRelay, with approvals for locks and garage doors.
