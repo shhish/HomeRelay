@@ -84,7 +84,7 @@ Only Apple devices can control an Apple Home, and HomeKit accessories can't be s
 
 - **Live events.** A Server-Sent Events stream pushes every change: a light turned on, a door opened, a sensor tripped, a device going offline.
 - **Resumable.** Events are kept on disk for 14 days. Reconnect with the last number you saw and get what you missed, without duplicates.
-- **Long-term history.** Point it at a disk and every value is kept for years: raw changes for two years, then 5-minute, hourly and daily summaries (time-weighted averages, time on, time in each state). When HomeRelay was off, charts show a gap instead of an invented flat line.
+- **Long-term history.** Point it at a second disk and every value is kept: raw changes for 24 months, 5-minute summaries for 5 years, and hourly and daily ones for good (time-weighted averages, time on, time in each state). Times HomeRelay was off show as gaps in charts.
 - **Who did what.** Every change says whether the device reported it, a scene ran it, or a client wrote it, and which token did.
 - **A token per device.** `control` or `read-only`, stored only as hashes. A dashboard can look but not touch.
 - **Bonjour discovery.** Advertised over Bonjour as `_homerelay._tcp`, so gadgets don't need a hard-coded IP.
