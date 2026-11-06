@@ -18,12 +18,6 @@ HomeRelay runs on an always-on Mac and lets them read and control every light, l
 
 ---
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/shhish/orb/main/docs/readme/home.png" alt="An ESP32 round display showing the weather, Home rooms with devices on, Home scenes like Good Night and I'm Leaving, and a timer" width="100%">
-  <br/>
-  <sub>The <a href="https://github.com/shhish/orb">Orb</a>, a round ESP32 screen, showing rooms and scenes it gets from HomeRelay.</sub>
-</p>
-
 ## What you can do
 
 <p align="center">
@@ -101,7 +95,7 @@ Only Apple devices can control an Apple Home, and HomeKit accessories can't be s
 ```bash
 cp Config/Local.xcconfig.example Config/Local.xcconfig   # your bundle prefix and team ID
 scripts/install.sh                      # build, install to ~/Applications, start at login
-scripts/homerelay-token add orb         # prints a control token once
+scripts/homerelay-token add desk-panel  # prints a control token once
 scripts/homerelay-token add dash --read-only
 scripts/smoke.py                        # checks the read paths
 scripts/history-setup /Volumes/Data/homerelay && scripts/install.sh --no-build   # optional: long-term history
