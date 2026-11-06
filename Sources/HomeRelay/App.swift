@@ -13,6 +13,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     private var activity: NSObjectProtocol?
     private var events = EventHub()
     private var terminateSource: DispatchSourceSignal?
+    private var history: History?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         let config = Config.fromEnvironment()
@@ -56,11 +57,23 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         guard store == nil else { return }
         let store = HomeKitStore(events: events, pollInterval: config.pollInterval, sampleInterval: config.sampleInterval)
         self.store = store
+        if let log = events.log {
+            var settings = History.Settings()
+            settings.requireSeparateVolume = true
+            let history = History(
+                dir: config.historyDir, backups: config.backupDir, log: log,
+                meta: { ids in await store.seriesMeta(ids) }, settings: settings, logger: { Log.info($0) }
+            )
+            history.start()
+            self.history = history
+            Log.info(config.historyDir.map { "History at \($0.path)" } ?? "History directory not set; summaries only")
+        }
 
         let router = APIRouter(
             backend: store,
             tokens: TokenStore(path: config.tokensFile),
             events: events,
+            history: history,
             version: Config.version,
             logReads: config.logReads,
             log: { Log.info($0) }

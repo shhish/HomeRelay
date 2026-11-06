@@ -16,6 +16,17 @@ BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/Releas
 LABEL="${HOMERELAY_LABEL:-$BUNDLE_ID.backend}"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
+# Machine-specific settings (HOMERELAY_HISTORY_DIR and the like) live in
+# Config/local.env, which stays out of git. One KEY=VALUE per line.
+ENV_ENTRIES=""
+if [[ -f Config/local.env ]]; then
+    while IFS='=' read -r key value; do
+        [[ "$key" =~ ^HOMERELAY_[A-Z_]+$ && "$key" != HOMERELAY_PORT ]] || continue
+        value="${value//&/&amp;}"; value="${value//</&lt;}"; value="${value//>/&gt;}"
+        ENV_ENTRIES+="    <key>$key</key>"$'\n'"    <string>$value</string>"$'\n'
+    done < Config/local.env
+fi
+
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 pkill -x HomeRelay 2>/dev/null || true
 mkdir -p "$HOME/Applications" logs
@@ -37,6 +48,7 @@ cat > "$PLIST" <<PLIST
   <dict>
     <key>HOMERELAY_PORT</key>
     <string>$PORT</string>
+$ENV_ENTRIES
   </dict>
   <key>WorkingDirectory</key>
   <string>$REPO_ROOT</string>

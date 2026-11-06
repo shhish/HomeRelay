@@ -77,10 +77,12 @@ final class SQLiteDB {
 
     enum Value {
         case int(Int64)
+        case real(Double)
         case text(String)
         case null
 
         static func optional(_ s: String?) -> Value { s.map(Value.text) ?? .null }
+        static func optionalReal(_ d: Double?) -> Value { d.map(Value.real) ?? .null }
     }
 
     final class Statement {
@@ -103,6 +105,7 @@ final class SQLiteDB {
                 let index = Int32(i + 1)
                 let rc: Int32 = switch value {
                 case .int(let v): sqlite3_bind_int64(stmt, index, v)
+                case .real(let v): sqlite3_bind_double(stmt, index, v)
                 case .text(let v): sqlite3_bind_text(stmt, index, v, -1, Self.transient)
                 case .null: sqlite3_bind_null(stmt, index)
                 }
@@ -120,6 +123,7 @@ final class SQLiteDB {
         }
 
         func int(_ column: Int32) -> Int64 { sqlite3_column_int64(stmt, column) }
+        func real(_ column: Int32) -> Double { sqlite3_column_double(stmt, column) }
         func isNull(_ column: Int32) -> Bool { sqlite3_column_type(stmt, column) == SQLITE_NULL }
         func text(_ column: Int32) -> String? {
             guard let p = sqlite3_column_text(stmt, column) else { return nil }

@@ -12,6 +12,11 @@ struct Config: Sendable {
     var sampleInterval: Duration
     /// The event log (hot tier); nil when `HOMERELAY_EVENT_LOG=off`.
     var eventLogFile: URL?
+    /// Long-term history directory on another disk (`HOMERELAY_HISTORY_DIR`);
+    /// used only while it holds this install's `.homerelay-store` marker.
+    var historyDir: URL?
+    /// Where history backups go (internal disk).
+    var backupDir: URL
     var logReads: Bool
 
     static let defaultPort = 18796
@@ -39,6 +44,8 @@ struct Config: Sendable {
             pollInterval: poll > 0 ? .seconds(poll) : nil,
             sampleInterval: .seconds(sample * 60),
             eventLogFile: eventLog,
+            historyDir: env["HOMERELAY_HISTORY_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0, directoryHint: .isDirectory) },
+            backupDir: env["HOMERELAY_BACKUP_DIR"].map { URL(filePath: $0, directoryHint: .isDirectory) } ?? support.appending(path: "backups", directoryHint: .isDirectory),
             logReads: env["HOMERELAY_LOG_READS"] == "1"
         )
     }

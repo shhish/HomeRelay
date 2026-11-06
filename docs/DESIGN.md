@@ -26,3 +26,15 @@
 - Retention: archived rows older than 14 days are deleted hourly. Until the history archiver exists, nothing is archived, so rows stay until the 2 GB cap, past which the oldest tenth goes and the count is kept in `meta.dropped`.
 - `sessions` records each run's start, last-alive time (every 30 s) and stop, so history can show gaps instead of drawing a flat line across them.
 - Event stream connections are pull-based (`EventStreamSession`): replays never outrun the client, and a client that falls behind live events catches up from the log.
+
+## History
+
+- `History` (HomeRelayCore) copies the event log to `HOMERELAY_HISTORY_DIR` every minute: `history/raw/YYYY-MM.sqlite` (UTC months; samples and reachability) and `history/rollups.sqlite` (series catalog, names over time, sessions, `rollup_5m`, `rollup_1h`, `rollup_1d`).
+- The directory is used only while `.homerelay-store` in it holds this install's store id. HomeRelay never creates that directory or marker; `scripts/history-setup` does, after checking the volume is mounted. Without the marker the disk counts as missing and events wait in the event log, so an unmounted disk can't get files written to the boot disk under its mount point.
+- Order per batch: raw rows and the rollups they affect commit first, then the event log marks them archived. A crash in between re-copies the batch; inserts are idempotent and rollups are recomputed.
+- Rollups use step-hold: a value holds until the next, but only within the HomeRelay run that recorded it (`sessions`). Buckets store only when they contain values; queries fill quiet buckets from the previous `last`. When a session is learned to have ended, the buckets it ended in are recomputed.
+- Daily after 03:00 local: back up (VACUUM INTO) the rollups and current month to `HOMERELAY_BACKUP_DIR`, keeping 7 days, and each closed month once it can no longer change; then delete 5-minute rollups past 5 years and raw months past 24, each month only when its hourly rollups count every sample and its backup exists.
+- Reachability changes are archived to the raw files only; past 24 months they survive only in the closed-month backups.
+- The marker is re-checked every run, and the app also refuses a directory on the boot volume.
+- `/history/summary` reads the event log, not the disk, so routines keep working while the disk is away.
+- `/health/history` is `503` when the disk has been missing for an hour, archiving lags a day, or events were dropped in the last day; Switchboard's `homerelay_history` probe watches it.

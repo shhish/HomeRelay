@@ -20,7 +20,8 @@ Wherever a path takes `{ref}`, use an id or a name:
 
 | Method | Path | Scope | What it does |
 |---|---|---|---|
-| GET | `/health` | none | `{"status":"ok"\|"degraded","homekit":"ready"\|"starting"\|"notAuthorized"\|"noHomes","eventLog":"ok"\|"failing"\|"off","service","version"}` |
+| GET | `/health` | none | `{"status":"ok"\|"degraded","homekit":"ready"\|"starting"\|"notAuthorized"\|"noHomes","eventLog":"ok"\|"failing"\|"off","history":{…},"service","version"}` |
+| GET | `/health/ready` | none | The same body; `503` unless HomeKit is ready (for monitors) |
 | GET | `/homes` | read | Homes with room, accessory and scene counts |
 | GET | `/snapshot?refresh=1&compact=1` | read | Everything: rooms, accessories (with services and characteristics) and scenes, per home |
 | GET | `/rooms` | read | Rooms with the ids of their accessories |
@@ -33,6 +34,10 @@ Wherever a path takes `{ref}`, use an id or a name:
 | POST | `/scenes/{ref}/run` | control | Run a scene |
 | GET | `/events?accessory=ID,ID&since=SEQ` | read | Server-sent events stream of changes, resumable (see below) |
 | GET | `/events/stats?hours=24` | read | Event log size, position and event counts by type and origin over the window |
+| GET | `/history/series?accessory=ID&type=` | read | Recorded series: id, characteristic id, kind, unit, names, first and last seen |
+| GET | `/history?series=ID,ID&from=&to=&step=auto` | read | Values over a time range (see History) |
+| GET | `/history/summary?series=ID&window=1h` | read | One series summarised over a recent window, up to `14d` |
+| GET | `/health/history` | none | History status; `503` when unhealthy (for monitors) |
 
 `refresh=1` reads from the devices any value that HomeKit isn't already keeping current through change notifications; values under notification are already live. Battery-powered devices are only read for values never seen before, since each read wakes the sensor (seconds of delay, and battery drain). A value that doesn't answer within 6 s is skipped, and not retried for 5 minutes, so one dead device doesn't slow every request. Vendor-defined (`custom.*`) values are never read; their `value` is whatever HomeKit last cached. Without `refresh`, values come from HomeKit's cache. In the background, values without notifications are re-read every 30 s, and mains-powered devices are fully re-read every 10 minutes.
 
@@ -127,6 +132,20 @@ data: {"type":"gap","missingFrom":1001,"missingTo":2000,"reason":"expired","stor
 
   `reason` is `expired` (older than the log keeps), `lost` (never written: a disk failure, or the last second before a crash) or `reset` (`since` is ahead of the log or `store` doesn't match, so it came from a different install; `missingTo` is absent). The range is in raw `seq` numbers and may include events your filter wouldn't have shown. After a gap, fetch `/snapshot` for current state.
 - Without `since`, the stream starts live, as before.
+
+## History
+
+With a history directory set up (`scripts/history-setup`), HomeRelay keeps every recorded value long-term. Without one, `/history/summary` still works from the 14-day event log.
+
+- **Series:** one per characteristic. `GET /history/series` lists them with a numeric `id`; anywhere a series is asked for, its `id` or the characteristic id works. `kind` is `numeric` (temperature, brightness), `binary` (motion, contact, on), `enum` (lock state, door state, modes) or `text`.
+- **`GET /history?series=ID,ID&from=&to=&step=`**: `from`/`to` are epoch milliseconds or ISO 8601 (defaults: the last 24 hours). `step` is `raw`, `5m`, `1h`, `1d` or `auto` (the finest that stays under about 2,000 points; raw up to 6 hours). Up to 20 series.
+  - `raw` returns `points`: `{"t": ms, "value": 21.5, "origin": "notification"}` (`text` instead of `value` for text series). Values from the last minute, not yet archived, are included.
+  - Other steps return one entry in `buckets` per bucket from `from` to `to`: `n` (values recorded in it), `coverage` (seconds the value was known), `mean` (time-weighted), `min`, `max`, `last`, `lastMs`, `transitions`, plus `on` (seconds on) for binary and `states` (`{"0": 3600, "1": 120}`, seconds per state) for enum series. A value holds until the next one, so a quiet bucket still has a `mean`, with `n: 0`.
+  - 5-minute and hourly buckets align to UTC; daily buckets start at local midnight.
+  - `gaps` lists `[start, end]` ms ranges when HomeRelay wasn't running. Values don't carry across a gap.
+- **`GET /history/summary?series=ID&window=1h`**: the same summary fields over the last `window` (`90s`, `15m`, `1h`, `7d`; at most `14d`), plus `current` and `since`. For conditions such as "the garage has been open for 10 minutes" (`summary.on` ≥ 600) or "the average temperature over the last hour".
+- **Kept:** raw values 24 months, 5-minute buckets 5 years, hourly and daily buckets forever. A raw month is removed only after its hourly buckets account for every value in it and a backup copy exists.
+- `503 history_unavailable` means the history disk isn't there right now; nothing is lost, values wait in the event log.
 
 ## Examples
 

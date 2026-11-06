@@ -1,0 +1,40 @@
+#!/bin/bash
+# Points HomeRelay's long-term history at a directory on another disk:
+#   scripts/history-setup /Volumes/<disk>/homerelay
+# Checks the disk is really mounted, creates the directory and its
+# .homerelay-store marker (this install's event-log store id), and records
+# HOMERELAY_HISTORY_DIR in Config/local.env. Run scripts/install.sh afterwards.
+set -euo pipefail
+
+DIR="${1:?usage: scripts/history-setup /Volumes/<disk>/homerelay}"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOT="${HOMERELAY_EVENT_LOG:-$HOME/Library/Application Support/HomeRelay/hot.sqlite}"
+
+case "$DIR" in
+    /Volumes/*/*) VOLUME="/Volumes/$(echo "$DIR" | cut -d/ -f3)" ;;
+    *) echo "Expected a directory on an external volume (/Volumes/<disk>/...)" >&2; exit 64 ;;
+esac
+# A mount point lives on a different device from the boot volume; an
+# unmounted /Volumes/<disk> would be a plain folder on the boot disk.
+if [[ ! -d "$VOLUME" ]] || [[ "$(stat -f %d "$VOLUME")" == "$(stat -f %d /)" ]]; then
+    echo "$VOLUME is not a mounted volume" >&2
+    exit 69
+fi
+[[ -f "$HOT" ]] || { echo "No event log at $HOT; start HomeRelay once first" >&2; exit 66; }
+STORE="$(sqlite3 "file:$HOT?mode=ro" "SELECT value FROM meta WHERE key = 'store_id'")"
+[[ -n "$STORE" ]] || { echo "No store id in $HOT" >&2; exit 65; }
+
+MARKER="$DIR/.homerelay-store"
+if [[ -f "$MARKER" ]] && [[ "$(tr -d '[:space:]' < "$MARKER")" != "$STORE" ]]; then
+    echo "$MARKER belongs to another HomeRelay install; move it aside first" >&2
+    exit 73
+fi
+mkdir -p "$DIR"
+printf '%s\n' "$STORE" > "$MARKER"
+
+ENV_FILE="$REPO_ROOT/Config/local.env"
+touch "$ENV_FILE"
+grep -v '^HOMERELAY_HISTORY_DIR=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
+echo "HOMERELAY_HISTORY_DIR=$DIR" >> "$ENV_FILE.tmp"
+mv "$ENV_FILE.tmp" "$ENV_FILE"
+echo "History will be kept in $DIR (store $STORE). Run scripts/install.sh to apply."

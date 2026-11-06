@@ -5,6 +5,8 @@ public struct APIRouter: Sendable {
     public let backend: any HomeBackend
     public let tokens: TokenStore
     public let events: EventHub
+    /// Long-term history and recent-window summaries; nil without an event log.
+    public let history: History?
     public let version: String
     public let heartbeat: Duration
     /// Successful reads are frequent (an ESP32 may poll), so they are only
@@ -14,12 +16,13 @@ public struct APIRouter: Sendable {
     public let log: @Sendable (String) -> Void
 
     public init(
-        backend: any HomeBackend, tokens: TokenStore, events: EventHub, version: String,
+        backend: any HomeBackend, tokens: TokenStore, events: EventHub, history: History? = nil, version: String,
         heartbeat: Duration = .seconds(15), logReads: Bool = false, log: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.backend = backend
         self.tokens = tokens
         self.events = events
+        self.history = history
         self.version = version
         self.heartbeat = heartbeat
         self.logReads = logReads
@@ -34,7 +37,11 @@ public struct APIRouter: Sendable {
             if request.method == "OPTIONS" {
                 response = HTTPResponse(status: 204, headers: Self.corsHeaders + [("Access-Control-Max-Age", "600")])
             } else if request.segments == ["api", "v1", "health"] {
-                response = try await health()
+                response = try await health(strict: false)
+            } else if request.segments == ["api", "v1", "health", "ready"] {
+                response = try await health(strict: true)
+            } else if request.segments == ["api", "v1", "health", "history"] {
+                response = try await historyHealth()
             } else {
                 let token = try authenticate(request)
                 caller = token.name
@@ -131,6 +138,20 @@ public struct APIRouter: Sendable {
                 since = nil
             }
             return eventStream(since: since, store: q["store"], accessoryIds: q["accessory"].map { Set($0.split(separator: ",").map(String.init)) })
+        case ("GET", 2, "history") where rest[1] == "series":
+            return try json(await requireHistory().series(accessory: q["accessory"], type: q["type"]))
+        case ("GET", 1, "history"):
+            let refs = (q["series"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard !refs.isEmpty else { throw APIError.badRequest("series is required: series ids or characteristic ids, comma-separated") }
+            let now = Int64((Date().timeIntervalSince1970 * 1000).rounded())
+            let to = try q["to"].map { try Self.parseTime($0, name: "to") } ?? now
+            let from = try q["from"].map { try Self.parseTime($0, name: "from") } ?? (to - 86_400_000)
+            return try json(await requireHistory().query(refs, from: from, to: to, step: q["step"] ?? "auto"))
+        case ("GET", 2, "history") where rest[1] == "summary":
+            guard let ref = q["series"], !ref.isEmpty else { throw APIError.badRequest("series is required") }
+            let window = try Self.parseDuration(q["window"] ?? "1h")
+            guard window <= .seconds(14 * 86_400) else { throw APIError.badRequest("window can be at most 14d") }
+            return try json(await requireHistory().summary(ref, window: window))
         case ("GET", 2, "events") where rest[1] == "stats":
             guard let log = events.log else { throw APIError.notFound("The event log is off") }
             let hours = q["hours"].flatMap(Int.init).map { min(max($0, 1), 24 * 31) } ?? 24
@@ -140,7 +161,8 @@ public struct APIRouter: Sendable {
         }
     }
 
-    private func health() async throws -> HTTPResponse {
+    /// `strict` (`/health/ready`) answers 503 unless HomeKit is ready, for status-code monitors.
+    private func health(strict: Bool) async throws -> HTTPResponse {
         let status = await backend.status()
         struct Health: Encodable {
             var status: String
@@ -148,11 +170,44 @@ public struct APIRouter: Sendable {
             var version: String
             var homekit: String
             var eventLog: String
+            var history: History.Status?
         }
-        return try json(Health(
+        let body = Health(
             status: status.isReady ? "ok" : "degraded", version: version, homekit: status.state,
-            eventLog: events.log?.health ?? "off"
-        ))
+            eventLog: events.log?.health ?? "off", history: await history?.status()
+        )
+        return try json(body, status: strict && !status.isReady ? 503 : 200)
+    }
+
+    /// 200 when history is healthy (or off), 503 when the disk has been away
+    /// over an hour, archiving lags a day, or events were dropped in the last day.
+    private func historyHealth() async throws -> HTTPResponse {
+        guard let history else { return try json(["history": "off"]) }
+        let status = await history.status()
+        return try json(status, status: status.healthy ? 200 : 503)
+    }
+
+    private func requireHistory() throws(APIError) -> History {
+        guard let history else { throw APIError.notFound("History is off: it needs the event log") }
+        return history
+    }
+
+    /// Epoch milliseconds or ISO 8601.
+    static func parseTime(_ raw: String, name: String) throws(APIError) -> Int64 {
+        if let ms = Int64(raw) { return ms }
+        for style in [Date.ISO8601FormatStyle(includingFractionalSeconds: true), Date.ISO8601FormatStyle()] {
+            if let date = try? style.parse(raw) { return Int64((date.timeIntervalSince1970 * 1000).rounded()) }
+        }
+        throw .badRequest("\(name) must be epoch milliseconds or ISO 8601")
+    }
+
+    /// `90s`, `15m`, `1h`, `7d`.
+    static func parseDuration(_ raw: String) throws(APIError) -> Duration {
+        let units: [Character: Int64] = ["s": 1, "m": 60, "h": 3_600, "d": 86_400]
+        guard let unit = raw.last, let scale = units[unit], let n = Int64(raw.dropLast()), n > 0 else {
+            throw .badRequest("window must look like 90s, 15m, 1h or 7d")
+        }
+        return .seconds(n * scale)
     }
 
     // MARK: - Events

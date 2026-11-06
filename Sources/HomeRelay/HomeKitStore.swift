@@ -163,6 +163,21 @@ final class HomeKitStore: NSObject, HomeBackend {
         return SceneDTO(id: named.id, name: scene.name, home: h.name, kind: HomeKitNames.sceneKind(scene.actionSetType))
     }
 
+    /// HomeKit metadata for history: how to summarise each characteristic.
+    func seriesMeta(_ ids: [String]) -> [String: SeriesMeta] {
+        var out: [String: SeriesMeta] = [:]
+        for id in ids {
+            guard let uuid = UUID(uuidString: id), let found = findCharacteristic(uuid) else { continue }
+            let c = found.characteristic
+            let m = c.metadata
+            out[id] = SeriesMeta(
+                type: HomeKitNames.characteristic(c), format: m?.format, unit: m?.units,
+                validValues: m?.validValues?.map(\.intValue), min: m?.minimumValue?.doubleValue, max: m?.maximumValue?.doubleValue
+            )
+        }
+        return out
+    }
+
     // MARK: - Selection
 
     private func ready() async throws {

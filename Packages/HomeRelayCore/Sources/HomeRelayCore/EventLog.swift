@@ -51,6 +51,7 @@ public final class EventLog: @unchecked Sendable {
         var nextSeq: Int64
         var pending: [Pending] = []
         var dropped: Int64 = 0
+        var droppedAt: Int64?
         var lastError: String?
         var closed = false
     }
@@ -103,6 +104,7 @@ public final class EventLog: @unchecked Sendable {
             );
             CREATE INDEX IF NOT EXISTS events_ts ON events(ts_ms);
             CREATE INDEX IF NOT EXISTS events_unarchived ON events(seq) WHERE archived = 0;
+            CREATE INDEX IF NOT EXISTS events_characteristic ON events(characteristic_id, ts_ms) WHERE characteristic_id IS NOT NULL;
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY,
                 started_ms INTEGER NOT NULL,
@@ -177,6 +179,7 @@ public final class EventLog: @unchecked Sendable {
                 let excess = s.pending.count - Self.maxPending
                 s.pending.removeFirst(excess)
                 s.dropped += Int64(excess)
+                s.droppedAt = now
             }
             return numbered
         }
@@ -304,6 +307,107 @@ public final class EventLog: @unchecked Sendable {
         }
     }
 
+    // MARK: - Archiving
+
+    /// An event as stored: its log time in epoch ms, and the event.
+    public struct Row: Sendable {
+        public var seq: Int64
+        public var tsMs: Int64
+        public var event: HomeEvent
+    }
+
+    /// One run of HomeRelay, from the `sessions` table. `stoppedMs` is nil
+    /// while it runs (or until the next start finds it ended uncleanly).
+    public struct Session: Sendable, Equatable {
+        public var id: Int64
+        public var startedMs: Int64
+        public var aliveMs: Int64
+        public var stoppedMs: Int64?
+        public var reason: String?
+    }
+
+    /// The oldest events not yet copied to long-term history, flushed first.
+    public func unarchived(limit: Int) async -> [Row] {
+        await onQueue { [self] in
+            flushOnQueue()
+            return rows("SELECT seq, ts_ms, json FROM events WHERE archived = 0 ORDER BY seq LIMIT ?", [.int(Int64(limit))])
+        }
+    }
+
+    /// Marks events up to `seq` as copied, so retention may delete them.
+    public func markArchived(through seq: Int64) async {
+        await onQueue { [self] in
+            do {
+                try db.transaction {
+                    try db.run("UPDATE events SET archived = 1 WHERE archived = 0 AND seq <= ?", [.int(seq)])
+                    try db.run("INSERT INTO meta(key, value) VALUES ('archived_seq', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                               [.text(String(seq))])
+                }
+            } catch {
+                log("Event log: marking archived failed: \(error)")
+            }
+        }
+    }
+
+    public func sessions() async -> [Session] {
+        await onQueue { [self] in
+            var out: [Session] = []
+            guard let stmt = try? db.prepare("SELECT id, started_ms, alive_ms, stopped_ms, reason FROM sessions ORDER BY id") else { return out }
+            while (try? stmt.step()) == true {
+                out.append(Session(id: stmt.int(0), startedMs: stmt.int(1), aliveMs: stmt.int(2),
+                                   stoppedMs: stmt.isNull(3) ? nil : stmt.int(3), reason: stmt.text(4)))
+            }
+            return out
+        }
+    }
+
+    /// One characteristic's events between `fromMs` (exclusive of the value in
+    /// force before it, returned as `prior`) and `toMs`, samples included.
+    public func characteristicRows(_ id: String, fromMs: Int64, toMs: Int64) async -> (prior: Row?, rows: [Row]) {
+        await onQueue { [self] in
+            flushOnQueue()
+            let prior = rows("""
+                SELECT seq, ts_ms, json FROM events WHERE characteristic_id = ? AND type = 'characteristic' AND ts_ms < ?
+                ORDER BY ts_ms DESC, seq DESC LIMIT 1
+                """, [.text(id), .int(fromMs)]).first
+            let inRange = rows("""
+                SELECT seq, ts_ms, json FROM events WHERE characteristic_id = ? AND type = 'characteristic' AND ts_ms >= ? AND ts_ms < ?
+                ORDER BY ts_ms, seq
+                """, [.text(id), .int(fromMs), .int(toMs)])
+            return (prior, inRange)
+        }
+    }
+
+    /// Log time of the oldest event not yet archived, if any.
+    public func oldestUnarchivedMs() async -> Int64? {
+        await onQueue { [self] in
+            if let ms = try? db.scalar("SELECT ts_ms FROM events WHERE archived = 0 ORDER BY seq LIMIT 1") { return ms }
+            return state.withLock { $0.pending.first?.tsMs }
+        }
+    }
+
+    /// When events were last dropped (size cap or a failing disk), if ever.
+    public func lastDropMs() async -> Int64? {
+        await onQueue { [self] in
+            let fromMeta = (try? Self.meta(db, "dropped_at")).flatMap { Int64($0) }
+            let inMemory = state.withLock { $0.droppedAt }
+            return [fromMeta, inMemory].compactMap { $0 }.max()
+        }
+    }
+
+    private func rows(_ sql: String, _ args: [SQLiteDB.Value]) -> [Row] {
+        var out: [Row] = []
+        guard let stmt = try? db.prepare(sql) else { return out }
+        try? stmt.bind(args)
+        let decoder = JSONDecoder()
+        while (try? stmt.step()) == true {
+            if let text = stmt.text(2), let e = try? decoder.decode(HomeEvent.self, from: Data(text.utf8)) {
+                out.append(Row(seq: stmt.int(0), tsMs: stmt.int(1), event: e))
+            }
+        }
+        return out
+    }
+
     // MARK: - Maintenance
 
     /// Applies retention now. The timer does this hourly.
@@ -328,6 +432,8 @@ public final class EventLog: @unchecked Sendable {
                 let previous = try Self.meta(db, "dropped").flatMap { Int64($0) } ?? 0
                 try db.run("INSERT INTO meta(key, value) VALUES ('dropped', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                            [.text(String(previous + Int64(lost)))])
+                try db.run("INSERT INTO meta(key, value) VALUES ('dropped_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                           [.text(String(Self.ms(clock())))])
                 log("Event log over \(settings.maxBytes / 1_048_576) MB: dropped the \(lost) oldest events")
             }
             try db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
