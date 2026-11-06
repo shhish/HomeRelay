@@ -26,6 +26,16 @@ HomeRelay runs on an always-on Mac and lets them read and control every light, l
 
 ## What you can do
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/demo-dark.svg">
+    <img src="docs/readme/demo-light.svg" alt="Four requests to HomeRelay: read the Floor Lamp, turn it on at 40 percent, run the Good Night scene and read the Front Door lock. The live event stream shows the lamp turning on and dimming, then the scene turning it off and locking the door." width="100%">
+  </picture>
+</p>
+<p align="center"><sub>Real requests and the live events they caused, captured from HomeRelay's server running against a demo home.</sub></p>
+
+A few more:
+
 | Ask HomeRelay… | …with one request |
 | --- | --- |
 | What's on in the living room? | `GET /accessories?room=Living Room` |
@@ -59,19 +69,12 @@ Values are made to fit: `"on"`, `1` and `true` all work, and a brightness of 150
 
 ## How it works
 
-```mermaid
-flowchart LR
-  ESP["ESP32 gadgets"] --> HR
-  PI["Raspberry Pi"] --> HR
-  DASH["Dashboards"] --> HR
-  AGENT["AI agents"] --> HR
-
-  HR{{"HomeRelay<br/>on an always-on Mac"}}
-
-  HR -- HomeKit --> HOME[("Apple Home")]
-  HOME --- NATIVE["HomeKit · Matter · Thread"]
-  HOME --- BRIDGES["Hue · Homebridge · Wi-Fi"]
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-it-works-dark.svg">
+    <img src="docs/readme/how-it-works-light.svg" alt="ESP32 gadgets, a Raspberry Pi, dashboards and AI agents call HomeRelay over REST and live events, with a token per client. HomeRelay runs on an always-on Mac and controls Apple Home through HomeKit: native HomeKit accessories, Matter and Thread devices, Homebridge plugins, and Hue and Wi-Fi bridges." width="100%">
+  </picture>
+</p>
 
 Every client talks plain HTTP with its own token: REST to read and change things, and a live event stream to hear about changes.
 
