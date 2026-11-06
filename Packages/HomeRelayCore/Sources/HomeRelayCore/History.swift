@@ -146,6 +146,12 @@ public final class History: @unchecked Sendable {
         var unavailableSinceMs: Int64?
     }
 
+    /// Labels and device information: not values worth a history.
+    public static let unrecordedTypes: Set<String> = [
+        "name", "configuredName", "identify", "manufacturer", "model", "serialNumber", "firmwareRevision",
+        "hardwareRevision", "softwareRevision", "labelIndex", "labelNamespace", "version",
+    ]
+
     public let dir: URL?
     public let backups: URL?
     public let log: EventLog
@@ -409,7 +415,7 @@ public final class History: @unchecked Sendable {
                         let e = row.event
                         switch e.type {
                         case "characteristic":
-                            guard let cid = e.characteristicId else { continue }
+                            guard let cid = e.characteristicId, !Self.unrecordedTypes.contains(e.characteristic ?? "") else { continue }
                             let series = try ensureSeries(cid, event: e, at: row.tsMs, meta: metas[cid])
                             let point = HistoryPoint(ts: row.tsMs, json: e.value)
                             try sample.bind([

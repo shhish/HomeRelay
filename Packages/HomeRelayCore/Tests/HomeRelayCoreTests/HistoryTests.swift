@@ -133,6 +133,7 @@ final class HistoryFixture: @unchecked Sendable {
         f.clock.advance(120)
         f.temperature(22)
         f.lamp(true)
+        f.hub.publish(HomeEvent(type: "characteristic", accessoryId: "LAMP-1", characteristicId: "C-NAME", characteristic: "name", value: .string("Desk Lamp"), origin: "poll"))
         await f.history.archive()
 
         let raw = try SQLiteDB(path: f.disk.appending(path: "history/raw/2026-10.sqlite").path)

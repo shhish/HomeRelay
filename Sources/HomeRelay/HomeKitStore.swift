@@ -351,7 +351,7 @@ final class HomeKitStore: NSObject, HomeBackend {
         let now = ContinuousClock.now
         if let last = lastRecorded[c.uniqueIdentifier], now - last < sampleInterval { return }
         let type = HomeKitNames.characteristic(c)
-        guard type != "buttonEvent", let service = c.service else { return }
+        guard type != "buttonEvent", !History.unrecordedTypes.contains(type), let service = c.service else { return }
         lastRecorded[c.uniqueIdentifier] = now
         events.record(HomeEvent(
             type: "characteristic",
