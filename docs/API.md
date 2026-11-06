@@ -20,7 +20,7 @@ Wherever a path takes `{ref}`, use an id or a name:
 
 | Method | Path | Scope | What it does |
 |---|---|---|---|
-| GET | `/health` | none | `{"status":"ok"\|"degraded","homekit":"ready"\|"starting"\|"notAuthorized"\|"noHomes","service","version"}` |
+| GET | `/health` | none | `{"status":"ok"\|"degraded","homekit":"ready"\|"starting"\|"notAuthorized"\|"noHomes","eventLog":"ok"\|"failing"\|"off","service","version"}` |
 | GET | `/homes` | read | Homes with room, accessory and scene counts |
 | GET | `/snapshot?refresh=1&compact=1` | read | Everything: rooms, accessories (with services and characteristics) and scenes, per home |
 | GET | `/rooms` | read | Rooms with the ids of their accessories |
@@ -31,7 +31,8 @@ Wherever a path takes `{ref}`, use an id or a name:
 | PUT | `/characteristics/{id}` | control | Low-level write: `{"value": ...}` to one characteristic by id |
 | GET | `/scenes` | read | Scenes as the Home app shows them |
 | POST | `/scenes/{ref}/run` | control | Run a scene |
-| GET | `/events?accessory=ID,ID` | read | Server-sent events stream of changes (see below) |
+| GET | `/events?accessory=ID,ID&since=SEQ` | read | Server-sent events stream of changes, resumable (see below) |
+| GET | `/events/stats?hours=24` | read | Event log size, position and event counts by type and origin over the window |
 
 `refresh=1` reads from the devices any value that HomeKit isn't already keeping current through change notifications; values under notification are already live. Battery-powered devices are only read for values never seen before, since each read wakes the sensor (seconds of delay, and battery drain). A value that doesn't answer within 6 s is skipped, and not retried for 5 minutes, so one dead device doesn't slow every request. Vendor-defined (`custom.*`) values are never read; their `value` is whatever HomeKit last cached. Without `refresh`, values come from HomeKit's cache. In the background, values without notifications are re-read every 30 s, and mains-powered devices are fully re-read every 10 minutes.
 
@@ -84,21 +85,48 @@ An unknown key returns `422` listing what the accessory can write.
 `GET /events` keeps the connection open and sends [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html):
 
 ```
+id: 4182
 event: characteristic
-data: {"accessory":"Floor Lamp","accessoryId":"6D3A…","characteristic":"on","characteristicId":"…","home":"Home","room":"Bedroom","serviceId":"…","ts":"2026-10-26T22:31:04.512-0400","type":"characteristic","value":false}
+data: {"accessory":"Floor Lamp","accessoryId":"6D3A…","characteristic":"on","characteristicId":"…","home":"Home","origin":"notification","room":"Bedroom","seq":4182,"serviceId":"…","ts":"2026-10-26T22:31:04.512-0400","type":"characteristic","value":false}
 
+id: 4183
+event: characteristic
+data: {…,"by":"orb","cause":"routine:hall-1","origin":"write","seq":4183,"value":true}
+
+id: 4184
 event: reachability
-data: {"accessory":"Tower Fan","accessoryId":"…","reachable":false,"type":"reachability",…}
+data: {"accessory":"Tower Fan","accessoryId":"…","reachable":false,"seq":4184,"type":"reachability",…}
 
+id: 4185
 event: homes
-data: {"type":"homes",…}
+data: {"type":"homes","seq":4185,…}
 ```
 
 - `characteristic` events come from HomeKit's change notifications, from HomeRelay's own writes and scene runs, and from the 30-second re-read for devices that don't send notifications. Vendor-defined (`custom.*`) values are not streamed.
+- `origin` says where a value came from: `notification` (the device reported it), `poll` (a re-read found a change), `write` or `scene` (HomeRelay set it, so `value` is what was requested; the device's own report follows as a `notification` if it sends one). Writes and scene runs also carry `by` (the token name) and, for scenes, `scene`. A notification repeating the previous value within 10 seconds is dropped as a duplicate, except button presses.
+- Send `X-HomeRelay-Cause: <id>` (up to 128 printable characters, no spaces) with a write or scene run, and the events it causes carry `cause: "<id>"`. A routine engine uses this to recognise its own actions.
 - `homes` means accessories, rooms or scenes changed; fetch `/snapshot` again.
 - A `: keepalive` comment line arrives every 15 s. If 45 s pass with nothing, reconnect.
 - `?accessory=ID1,ID2` limits the stream to those accessories (ids only).
 - The connection closes after the stream ends; open a new one for other requests.
+
+### Resuming
+
+Every event has a `seq` (also sent as the SSE `id:`) that keeps increasing across restarts. HomeRelay keeps the last 14 days of events on disk.
+
+- Reconnect with `?since=<last seq you handled>`, or send it as `Last-Event-ID` (browsers' `EventSource` does this for you). Events after it are replayed, then the stream goes live with no duplicates.
+- Each install's log has an id, sent as the `X-HomeRelay-Store` response header and in `/events/stats`. Pass it back as `?store=<id>` and a position from a different install is treated as a `reset` rather than resumed.
+- A client that reads too slowly to keep up isn't sent a partial stream: it catches up from the log.
+- If events you asked for are no longer available, a `gap` frame comes first:
+
+```
+id: 2000
+event: gap
+data: {"type":"gap","missingFrom":1001,"missingTo":2000,"reason":"expired","store":"…","ts":"…"}
+```
+
+  `reason` is `expired` (older than the log keeps), `lost` (never written: a disk failure, or the last second before a crash) or `reset` (`since` is ahead of the log or `store` doesn't match, so it came from a different install; `missingTo` is absent). The range is in raw `seq` numbers and may include events your filter wouldn't have shown. After a gap, fetch `/snapshot` for current state.
+- Without `since`, the stream starts live, as before.
 
 ## Examples
 

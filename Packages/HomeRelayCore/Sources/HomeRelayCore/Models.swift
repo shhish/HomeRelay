@@ -220,7 +220,7 @@ public struct HomeDTO: Codable, Sendable, Equatable {
 
 /// A change pushed to `/api/v1/events` subscribers.
 public struct HomeEvent: Codable, Sendable, Equatable {
-    /// `characteristic`, `reachability` or `homes`.
+    /// `characteristic`, `reachability` or `homes`. (`gap` frames on the stream are a separate shape.)
     public var type: String
     public var home: String?
     public var accessoryId: String?
@@ -232,11 +232,25 @@ public struct HomeEvent: Codable, Sendable, Equatable {
     public var value: JSONValue?
     public var reachable: Bool?
     public var ts: String
+    /// Position in the event log, increasing across restarts. Absent when the log is off.
+    public var seq: Int64?
+    /// Where a `characteristic` value came from: `notification` (the device
+    /// reported it), `poll` (a re-read found a change), `write` or `scene`
+    /// (HomeRelay set it; the value is what was requested), or `sample` (a
+    /// periodic record of an unchanged value, kept in the log but not streamed).
+    public var origin: String?
+    /// Token name behind a `write` or `scene`.
+    public var by: String?
+    /// Scene name, for `origin: scene`.
+    public var scene: String?
+    /// The caller's `X-HomeRelay-Cause` header, echoed on the events its request caused.
+    public var cause: String?
 
     public init(
         type: String, home: String? = nil, accessoryId: String? = nil, accessory: String? = nil,
         room: String? = nil, serviceId: String? = nil, characteristicId: String? = nil,
-        characteristic: String? = nil, value: JSONValue? = nil, reachable: Bool? = nil, ts: String = HomeEvent.now()
+        characteristic: String? = nil, value: JSONValue? = nil, reachable: Bool? = nil, ts: String = HomeEvent.now(),
+        origin: String? = nil, by: String? = nil, scene: String? = nil, cause: String? = nil
     ) {
         self.type = type
         self.home = home
@@ -249,6 +263,10 @@ public struct HomeEvent: Codable, Sendable, Equatable {
         self.value = value
         self.reachable = reachable
         self.ts = ts
+        self.origin = origin
+        self.by = by
+        self.scene = scene
+        self.cause = cause
     }
 
     public static func now() -> String {

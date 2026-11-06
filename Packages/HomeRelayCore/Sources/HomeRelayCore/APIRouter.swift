@@ -38,7 +38,12 @@ public struct APIRouter: Sendable {
             } else {
                 let token = try authenticate(request)
                 caller = token.name
-                response = try await route(request, token: token)
+                let cause = RequestContext.validCause(request.headers["x-homerelay-cause"])
+                response = try await RequestContext.$caller.withValue(token.name) {
+                    try await RequestContext.$cause.withValue(cause) {
+                        try await route(request, token: token)
+                    }
+                }
             }
         } catch let error as APIError {
             response = Self.errorResponse(error)
@@ -115,7 +120,21 @@ public struct APIRouter: Sendable {
             try requireControl(token)
             return try json(await backend.runScene(rest[1], home: home))
         case ("GET", 1, "events"):
-            return await eventStream(accessoryIds: q["accessory"].map { Set($0.split(separator: ",").map(String.init)) })
+            let resume = q["since"] ?? request.headers["last-event-id"]
+            let since: Int64?
+            if let resume, !resume.isEmpty {
+                guard let n = Int64(resume.trimmingCharacters(in: .whitespaces)), n >= 0 else {
+                    throw APIError.badRequest("since must be a non-negative event seq")
+                }
+                since = n
+            } else {
+                since = nil
+            }
+            return eventStream(since: since, store: q["store"], accessoryIds: q["accessory"].map { Set($0.split(separator: ",").map(String.init)) })
+        case ("GET", 2, "events") where rest[1] == "stats":
+            guard let log = events.log else { throw APIError.notFound("The event log is off") }
+            let hours = q["hours"].flatMap(Int.init).map { min(max($0, 1), 24 * 31) } ?? 24
+            return try json(await log.stats(windowHours: hours))
         default:
             throw APIError.notFound("No route for \(request.method) \(request.path)")
         }
@@ -128,46 +147,26 @@ public struct APIRouter: Sendable {
             var service = "homerelay"
             var version: String
             var homekit: String
+            var eventLog: String
         }
-        return try json(Health(status: status.isReady ? "ok" : "degraded", version: version, homekit: status.state))
+        return try json(Health(
+            status: status.isReady ? "ok" : "degraded", version: version, homekit: status.state,
+            eventLog: events.log?.health ?? "off"
+        ))
     }
 
     // MARK: - Events
 
-    private func eventStream(accessoryIds: Set<String>?) async -> HTTPResponse {
-        let source = await events.subscribe()
-        let heartbeat = self.heartbeat
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-
-        let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingNewest(512))
-        continuation.yield(Data(": homerelay events\nretry: 3000\n\n".utf8))
-        let pump = Task {
-            for await event in source {
-                if let ids = accessoryIds, !ids.contains(event.accessoryId ?? "") { continue }
-                guard let payload = try? encoder.encode(event) else { continue }
-                continuation.yield(Data("event: \(event.type)\ndata: ".utf8) + payload + Data("\n\n".utf8))
-            }
-            continuation.finish()
-        }
-        let beat = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: heartbeat)
-                continuation.yield(Data(": keepalive\n\n".utf8))
-            }
-        }
-        continuation.onTermination = { _ in
-            pump.cancel()
-            beat.cancel()
-        }
+    private func eventStream(since: Int64?, store: String?, accessoryIds: Set<String>?) -> HTTPResponse {
+        let session = EventStreamSession(hub: events, since: since, store: store, accessoryIds: accessoryIds, heartbeat: heartbeat)
         return HTTPResponse(
             status: 200,
-            headers: Self.corsHeaders + [
+            headers: Self.corsHeaders + (events.log.map { [("X-HomeRelay-Store", $0.storeId)] } ?? []) + [
                 ("Content-Type", "text/event-stream"),
                 ("Cache-Control", "no-cache"),
                 ("X-Accel-Buffering", "no"),
             ],
-            body: .stream(stream)
+            body: .stream(AsyncStream(unfolding: { await session.next() }))
         )
     }
 
@@ -175,8 +174,9 @@ public struct APIRouter: Sendable {
 
     static let corsHeaders: [(String, String)] = [
         ("Access-Control-Allow-Origin", "*"),
-        ("Access-Control-Allow-Headers", "Authorization, Content-Type"),
+        ("Access-Control-Allow-Headers", "Authorization, Content-Type, Last-Event-ID, X-HomeRelay-Cause"),
         ("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, OPTIONS"),
+        ("Access-Control-Expose-Headers", "X-HomeRelay-Store"),
     ]
 
     private func json<T: Encodable>(_ value: T, status: Int = 200) throws -> HTTPResponse {

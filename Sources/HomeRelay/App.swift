@@ -11,11 +11,32 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     private var serverTask: Task<Void, Never>?
     private var advertiser: BonjourAdvertiser?
     private var activity: NSObjectProtocol?
-    private let events = EventHub()
+    private var events = EventHub()
+    private var terminateSource: DispatchSourceSignal?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         let config = Config.fromEnvironment()
         Log.info("HomeRelay \(Config.version) starting; tokens at \(config.tokensFile.path)")
+        if let file = config.eventLogFile {
+            do {
+                let log = try EventLog(path: file, log: { Log.info($0) })
+                log.start()
+                events = EventHub(log: log)
+                Log.info("Event log at \(file.path), resuming after seq \(log.latestSeq)")
+                // Stopping the LaunchAgent sends SIGTERM; write what's queued first.
+                signal(SIGTERM, SIG_IGN)
+                let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+                source.setEventHandler {
+                    log.close()
+                    exit(0)
+                }
+                source.resume()
+                terminateSource = source
+            } catch {
+                // Serving the API matters more than history; run without resume.
+                Log.error("Event log unavailable, running without it: \(error)")
+            }
+        }
 
         // A windowless Catalyst app is a prime App Nap candidate; keep timers
         // and sockets responsive without stopping the Mac from sleeping.
@@ -27,9 +48,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    func applicationWillTerminate(_ application: UIApplication) {
+        events.log?.close()
+    }
+
     private func start(_ config: Config) {
         guard store == nil else { return }
-        let store = HomeKitStore(events: events, pollInterval: config.pollInterval)
+        let store = HomeKitStore(events: events, pollInterval: config.pollInterval, sampleInterval: config.sampleInterval)
         self.store = store
 
         let router = APIRouter(

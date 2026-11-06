@@ -8,6 +8,10 @@ struct Config: Sendable {
     var tokensFile: URL
     /// nil disables the polling fallback.
     var pollInterval: Duration?
+    /// How often an unchanged value is still written to the event log.
+    var sampleInterval: Duration
+    /// The event log (hot tier); nil when `HOMERELAY_EVENT_LOG=off`.
+    var eventLogFile: URL?
     var logReads: Bool
 
     static let defaultPort = 18796
@@ -21,12 +25,20 @@ struct Config: Sendable {
         // Not sandboxed, so this is ~/Library/Application Support/HomeRelay.
         let support = URL.applicationSupportDirectory.appending(path: "HomeRelay", directoryHint: .isDirectory)
         let poll = env["HOMERELAY_POLL_SECONDS"].flatMap(Int.init) ?? 30
+        let sample = max(env["HOMERELAY_SAMPLE_MINUTES"].flatMap(Int.init) ?? 60, 1)
+        let eventLog: URL? = switch env["HOMERELAY_EVENT_LOG"] {
+        case "off": nil
+        case let path? where !path.isEmpty: URL(filePath: path)
+        default: support.appending(path: "hot.sqlite")
+        }
         return Config(
             // "::" accepts IPv6 and IPv4 (mapped) clients; Bonjour advertises both.
             host: env["HOMERELAY_HOST"] ?? "::",
             port: env["HOMERELAY_PORT"].flatMap(Int.init) ?? defaultPort,
             tokensFile: env["HOMERELAY_TOKENS_FILE"].map { URL(filePath: $0) } ?? support.appending(path: "tokens.json"),
             pollInterval: poll > 0 ? .seconds(poll) : nil,
+            sampleInterval: .seconds(sample * 60),
+            eventLogFile: eventLog,
             logReads: env["HOMERELAY_LOG_READS"] == "1"
         )
     }

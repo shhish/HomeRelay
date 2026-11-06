@@ -44,7 +44,7 @@ On first launch macOS asks whether HomeRelay may access Home data. Until that's 
 ## Running
 
 - LaunchAgent `<bundle id>.backend` (for example `com.example.homerelay.backend`) runs `scripts/run.sh`, which launches the app through LaunchServices (HomeKit needs a real app launch with a UIKit scene) and relaunches it within about 5 s if it exits. The wrapper does the restarting because launchd defers KeepAlive respawns when the Mac is busy.
-- Settings (LaunchAgent environment): `HOMERELAY_PORT` (18796), `HOMERELAY_HOST` (`::`, IPv6 and IPv4), `HOMERELAY_POLL_SECONDS` (30: re-read values without change notifications, with a full mains-device sweep every 20th run; 0 turns it off), `HOMERELAY_LOG_READS` (1 logs successful GETs too), `HOMERELAY_TOKENS_FILE`.
+- Settings (LaunchAgent environment): `HOMERELAY_PORT` (18796), `HOMERELAY_HOST` (`::`, IPv6 and IPv4), `HOMERELAY_POLL_SECONDS` (30: re-read values without change notifications, with a full mains-device sweep every 20th run; 0 turns it off), `HOMERELAY_LOG_READS` (1 logs successful GETs too), `HOMERELAY_TOKENS_FILE`, `HOMERELAY_EVENT_LOG` (path of the event log, default `~/Library/Application Support/HomeRelay/hot.sqlite`; `off` disables it and stream resume), `HOMERELAY_SAMPLE_MINUTES` (60: how often an unchanged value is still written to the log).
 - Tokens are stored as SHA-256 hashes in `~/Library/Application Support/HomeRelay/tokens.json` and reloaded on change.
 - Stop: `launchctl bootout gui/$(id -u)/<bundle id>.backend`. Start again: `scripts/install.sh --no-build`.
 

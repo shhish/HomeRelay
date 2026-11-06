@@ -10,10 +10,27 @@ final class HomeKitStore: NSObject, HomeBackend {
     private let manager: HMHomeManager
     private let events: EventHub
     private let pollInterval: Duration?
+    private let sampleInterval: Duration
     private var homesLoaded = false
-    private var subscribed: Set<UUID> = []
+    /// Characteristics with a notification request in flight.
+    private var enabling: Set<UUID> = []
+    private var attachTask: Task<Void, Never>?
+    /// Notification registrations refused at the last attempt, to log changes only.
+    private var lastRefused = 0
     /// Last value seen per characteristic, so polling only reports real changes.
     private var lastValues: [UUID: JSONValue] = [:]
+    /// Last value a device reported (notification or re-read), and when it was
+    /// recorded; HomeKit sometimes delivers the same notification twice.
+    private var lastObserved: [UUID: (value: JSONValue, at: ContinuousClock.Instant)] = [:]
+    /// When each characteristic last went into the event log, for samples.
+    private var lastRecorded: [UUID: ContinuousClock.Instant] = [:]
+    /// A repeated identical notification within this window is a duplicate.
+    /// HomeKit's double deliveries arrive together; a wider window could hide a
+    /// real repeat when the change in between was never notified.
+    private static let duplicateWindow: Duration = .seconds(10)
+    /// Characteristics whose notification registration failed, and when to try again.
+    private var notifyBackoff: [UUID: ContinuousClock.Instant] = [:]
+    private static let notifyRetryAfter: Duration = .seconds(1_800)
     private var pollTask: Task<Void, Never>?
     private var pollCount = 0
     /// Values whose last read failed or timed out, and when to try again. Keeps
@@ -27,9 +44,10 @@ final class HomeKitStore: NSObject, HomeBackend {
     private static let readTimeout: Duration = .seconds(6)
     private static let writeTimeout: Duration = .seconds(10)
 
-    init(events: EventHub, pollInterval: Duration?) {
+    init(events: EventHub, pollInterval: Duration?, sampleInterval: Duration) {
         self.events = events
         self.pollInterval = pollInterval
+        self.sampleInterval = sampleInterval
         self.manager = HMHomeManager()
         super.init()
         manager.delegate = self
@@ -138,7 +156,8 @@ final class HomeKitStore: NSObject, HomeBackend {
         // HomeKit does not notify the app that ran a scene, so report the
         // targets the scene set.
         for case let action as HMCharacteristicWriteAction<NSCopying> in scene.actions {
-            publishChange(action.characteristic, value: Self.json(action.targetValue, format: action.characteristic.metadata?.format))
+            publishChange(action.characteristic, value: Self.json(action.targetValue, format: action.characteristic.metadata?.format),
+                          origin: "scene", scene: scene.name)
         }
         Log.info("Ran scene \(scene.name)")
         return SceneDTO(id: named.id, name: scene.name, home: h.name, kind: HomeKitNames.sceneKind(scene.actionSetType))
@@ -248,7 +267,7 @@ final class HomeKitStore: NSObject, HomeBackend {
         }
         Log.info("Set \(found.accessory.name).\(write.type)")
         // HomeKit does not echo our own writes back through the delegate.
-        publishChange(c, value: write.value.json)
+        publishChange(c, value: write.value.json, origin: "write")
     }
 
     /// Runs `operation` but stops waiting after `limit`. HomeKit calls are not
@@ -273,13 +292,27 @@ final class HomeKitStore: NSObject, HomeBackend {
 
     // MARK: - Events
 
-    private func publishChange(_ c: HMCharacteristic, value: JSONValue?) {
+    /// Logs and streams a characteristic value. `origin` says where it came
+    /// from (see `HomeEvent.origin`); writes and scenes are labelled with the
+    /// token and cause of the request that made them.
+    private func publishChange(_ c: HMCharacteristic, value: JSONValue?, origin: String, scene: String? = nil) {
         guard let service = c.service, let accessory = service.accessory else { return }
         let type = HomeKitNames.characteristic(c)
         // Vendor values are mostly counters and diagnostics; streaming them is noise.
         guard !AccessoryDTO.isCustom(type) else { return }
-        if let value { lastValues[c.uniqueIdentifier] = value }
-        let event = HomeEvent(
+        let now = ContinuousClock.now
+        let observed = origin == "notification" || origin == "poll"
+        if origin == "notification", let value, type != "buttonEvent",
+           let last = lastObserved[c.uniqueIdentifier], last.value == value, now - last.at < Self.duplicateWindow {
+            return
+        }
+        if let value {
+            lastValues[c.uniqueIdentifier] = value
+            if observed { lastObserved[c.uniqueIdentifier] = (value, now) }
+        }
+        lastRecorded[c.uniqueIdentifier] = now
+        let fromRequest = origin == "write" || origin == "scene"
+        events.publish(HomeEvent(
             type: "characteristic",
             home: home(of: accessory)?.name,
             accessoryId: accessory.uniqueIdentifier.uuidString,
@@ -288,34 +321,111 @@ final class HomeKitStore: NSObject, HomeBackend {
             serviceId: service.uniqueIdentifier.uuidString,
             characteristicId: c.uniqueIdentifier.uuidString,
             characteristic: type,
-            value: value
-        )
-        Task { await events.publish(event) }
+            value: value,
+            origin: origin,
+            by: fromRequest ? RequestContext.caller : nil,
+            scene: scene,
+            cause: fromRequest ? RequestContext.cause : nil
+        ))
+    }
+
+    /// Logs (without streaming) an unchanged value when nothing about it has
+    /// been recorded for `sampleInterval`, so history can tell a steady value
+    /// from missing data.
+    private func sampleIfDue(_ c: HMCharacteristic, value: JSONValue, in accessory: HMAccessory) {
+        let now = ContinuousClock.now
+        if let last = lastRecorded[c.uniqueIdentifier], now - last < sampleInterval { return }
+        let type = HomeKitNames.characteristic(c)
+        guard type != "buttonEvent", let service = c.service else { return }
+        lastRecorded[c.uniqueIdentifier] = now
+        events.record(HomeEvent(
+            type: "characteristic",
+            home: home(of: accessory)?.name,
+            accessoryId: accessory.uniqueIdentifier.uuidString,
+            accessory: accessory.name,
+            room: accessory.room?.name,
+            serviceId: service.uniqueIdentifier.uuidString,
+            characteristicId: c.uniqueIdentifier.uuidString,
+            characteristic: type,
+            value: value,
+            origin: "sample"
+        ))
+    }
+
+    private func publishHomes(_ home: HMHome? = nil, _ accessory: HMAccessory? = nil) {
+        events.publish(HomeEvent(type: "homes", home: home?.name, accessoryId: accessory?.uniqueIdentifier.uuidString, accessory: accessory?.name))
     }
 
     private func home(of accessory: HMAccessory) -> HMHome? {
         manager.homes.first { $0.accessories.contains { $0.uniqueIdentifier == accessory.uniqueIdentifier } }
     }
 
-    /// Hooks delegates and change notifications for every accessory not seen yet.
-    private func attach() {
-        var enabled = 0
+    /// Coalesces bursts of HomeKit graph changes into one `attach`.
+    private func scheduleAttach() {
+        attachTask?.cancel()
+        attachTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await self?.attach()
+        }
+    }
+
+    /// Hooks delegates and change notifications on every accessory. Safe to
+    /// repeat: HomeKit can replace accessory objects or drop notification
+    /// registrations (after a hub restart, say), so this re-enables whatever
+    /// isn't enabled, in small batches so a large home doesn't flood HomeKit.
+    private func attach() async {
+        let now = ContinuousClock.now
+        notifyBackoff = notifyBackoff.filter { $0.value > now }
+        var wanted: [(HMCharacteristic, HMAccessory)] = []
         for h in manager.homes {
             h.delegate = self
-            for a in h.accessories where !subscribed.contains(a.uniqueIdentifier) {
-                subscribed.insert(a.uniqueIdentifier)
+            for a in h.accessories {
                 a.delegate = self
+                guard a.isReachable else { continue }
                 for s in a.services where s.serviceType != HMServiceTypeAccessoryInformation {
-                    for c in s.characteristics where Self.isEventWorthy(c) && c.properties.contains(HMCharacteristicPropertySupportsEventNotification) {
-                        enabled += 1
-                        c.enableNotification(true) { error in
-                            if let error { Log.info("No change notifications for \(a.name).\(c.localizedDescription): \(error.localizedDescription)") }
-                        }
+                    for c in s.characteristics where Self.isEventWorthy(c)
+                        && c.properties.contains(HMCharacteristicPropertySupportsEventNotification)
+                        && !c.isNotificationEnabled && !enabling.contains(c.uniqueIdentifier)
+                        && notifyBackoff[c.uniqueIdentifier] == nil {
+                        wanted.append((c, a))
                     }
                 }
             }
         }
-        if enabled > 0 { Log.info("Enabled change notifications on \(enabled) characteristics") }
+        guard !wanted.isEmpty else { return }
+        for (c, _) in wanted { enabling.insert(c.uniqueIdentifier) }
+        var failed = 0
+        for batch in stride(from: 0, to: wanted.count, by: 16).map({ Array(wanted[$0..<min($0 + 16, wanted.count)]) }) {
+            let refused = await withTaskGroup(of: UUID?.self) { group in
+                for (c, _) in batch {
+                    group.addTask {
+                        do {
+                            try await Self.withTimeout(Self.readTimeout, "Enabling notifications") {
+                                try await c.enableNotification(true)
+                            }
+                            return nil
+                        } catch {
+                            return c.uniqueIdentifier
+                        }
+                    }
+                }
+                var refused: [UUID] = []
+                for await id in group { if let id { refused.append(id) } }
+                return refused
+            }
+            failed += refused.count
+            let retryAt = ContinuousClock.now + Self.notifyRetryAfter
+            for id in refused { notifyBackoff[id] = retryAt }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        for (c, _) in wanted { enabling.remove(c.uniqueIdentifier) }
+        // Some devices refuse every time; say so when the picture changes, not every sweep.
+        if wanted.count > failed || failed != lastRefused {
+            Log.info("Enabled change notifications on \(wanted.count - failed) characteristics"
+                + (failed > 0 ? "; \(failed) refused or timed out, retried in 30 minutes" : ""))
+        }
+        lastRefused = failed
     }
 
     /// Fallback for devices that do not send notifications: re-read on a slow
@@ -332,8 +442,9 @@ final class HomeKitStore: NSObject, HomeBackend {
         }
     }
 
-    /// A full sweep re-reads mains-powered accessories completely; battery
-    /// accessories are left to their notifications.
+    /// A full sweep re-reads mains-powered accessories completely and repairs
+    /// notification registrations; battery accessories are left to their
+    /// notifications.
     private func pollOnce(fullSweep: Bool) async {
         let accessories = manager.homes.flatMap(\.accessories)
         if fullSweep {
@@ -341,18 +452,37 @@ final class HomeKitStore: NSObject, HomeBackend {
         } else {
             await read(accessories)
         }
+        diff(accessories)
+        if fullSweep { await attach() }
+    }
+
+    /// Publishes values that changed since last seen and samples the rest.
+    private func diff(_ accessories: [HMAccessory]) {
         for a in accessories where a.isReachable {
             for s in a.services where s.serviceType != HMServiceTypeAccessoryInformation {
                 for c in s.characteristics where Self.isEventWorthy(c) && c.properties.contains(HMCharacteristicPropertyReadable) {
                     guard let value = Self.json(c.value, format: c.metadata?.format) else { continue }
-                    if let previous = lastValues[c.uniqueIdentifier] {
-                        if previous != value { publishChange(c, value: value) }
+                    if let previous = lastValues[c.uniqueIdentifier], previous != value {
+                        publishChange(c, value: value, origin: "poll")
                     } else {
+                        // First sight (the session's starting state) or unchanged.
                         lastValues[c.uniqueIdentifier] = value
+                        sampleIfDue(c, value: value, in: a)
                     }
                 }
             }
         }
+    }
+
+    /// An accessory that comes back may have changed while away, and may have
+    /// lost its notification registrations.
+    private func refreshReturning(_ a: HMAccessory) async {
+        let ids = Set(a.services.flatMap(\.characteristics).map(\.uniqueIdentifier))
+        readBackoff = readBackoff.filter { !ids.contains($0.key) }
+        notifyBackoff = notifyBackoff.filter { !ids.contains($0.key) }
+        await read([a], force: !Self.hasBattery(a))
+        diff([a])
+        await attach()
     }
 
     // MARK: - DTOs
@@ -480,12 +610,14 @@ extension HomeKitStore: HMHomeManagerDelegate, HMHomeDelegate, HMAccessoryDelega
             let first = !self.homesLoaded
             self.homesLoaded = true
             Log.info("HomeKit has \(manager.homes.count) home(s), \(manager.homes.reduce(0) { $0 + $1.accessories.count }) accessories")
-            self.attach()
             if first {
+                Task { await self.attach() }
                 await self.pollOnce(fullSweep: true)
                 self.startPolling()
+            } else {
+                self.scheduleAttach()
             }
-            await self.events.publish(HomeEvent(type: "homes"))
+            self.publishHomes()
         }
     }
 
@@ -495,26 +627,39 @@ extension HomeKitStore: HMHomeManagerDelegate, HMHomeDelegate, HMAccessoryDelega
 
     nonisolated func home(_ home: HMHome, didAdd accessory: HMAccessory) {
         Task { @MainActor in
-            self.attach()
-            await self.events.publish(HomeEvent(type: "homes", home: home.name, accessoryId: accessory.uniqueIdentifier.uuidString, accessory: accessory.name))
+            self.scheduleAttach()
+            self.publishHomes(home, accessory)
         }
     }
 
     nonisolated func home(_ home: HMHome, didRemove accessory: HMAccessory) {
+        Task { @MainActor in self.publishHomes(home, accessory) }
+    }
+
+    nonisolated func home(_ home: HMHome, didUpdate room: HMRoom, for accessory: HMAccessory) {
+        Task { @MainActor in self.publishHomes(home, accessory) }
+    }
+
+    nonisolated func accessoryDidUpdateName(_ accessory: HMAccessory) {
+        Task { @MainActor in self.publishHomes(self.home(of: accessory), accessory) }
+    }
+
+    nonisolated func accessoryDidUpdateServices(_ accessory: HMAccessory) {
         Task { @MainActor in
-            await self.events.publish(HomeEvent(type: "homes", home: home.name, accessoryId: accessory.uniqueIdentifier.uuidString, accessory: accessory.name))
+            self.scheduleAttach()
+            self.publishHomes(self.home(of: accessory), accessory)
         }
     }
 
     nonisolated func accessory(_ accessory: HMAccessory, service: HMService, didUpdateValueFor characteristic: HMCharacteristic) {
         Task { @MainActor in
-            self.publishChange(characteristic, value: Self.json(characteristic.value, format: characteristic.metadata?.format))
+            self.publishChange(characteristic, value: Self.json(characteristic.value, format: characteristic.metadata?.format), origin: "notification")
         }
     }
 
     nonisolated func accessoryDidUpdateReachability(_ accessory: HMAccessory) {
         Task { @MainActor in
-            await self.events.publish(HomeEvent(
+            self.events.publish(HomeEvent(
                 type: "reachability",
                 home: self.home(of: accessory)?.name,
                 accessoryId: accessory.uniqueIdentifier.uuidString,
@@ -522,6 +667,7 @@ extension HomeKitStore: HMHomeManagerDelegate, HMHomeDelegate, HMAccessoryDelega
                 room: accessory.room?.name,
                 reachable: accessory.isReachable
             ))
+            if accessory.isReachable { await self.refreshReturning(accessory) }
         }
     }
 }

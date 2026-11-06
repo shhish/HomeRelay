@@ -7,6 +7,8 @@ actor FakeHome: HomeBackend {
     var fanActive = 0
     var lockTarget = 1
     var ranScenes: [String] = []
+    /// Request context seen by the last write, as the real backend would label its events.
+    var lastWriteContext: (caller: String?, cause: String?)?
     var ready = true
 
     static func makeLamp(on: Bool, brightness: Int) -> AccessoryDTO {
@@ -83,6 +85,7 @@ actor FakeHome: HomeBackend {
 
     func setAccessory(_ ref: String, home: String?, values: [String: JSONValue]) async throws -> AccessoryDTO {
         let target = try await accessory(ref, home: home, refresh: false)
+        lastWriteContext = (RequestContext.caller, RequestContext.cause)
         for write in try WritePlanner.plan(values, for: target) { apply(write) }
         return try await accessory(target.id, home: home, refresh: false)
     }

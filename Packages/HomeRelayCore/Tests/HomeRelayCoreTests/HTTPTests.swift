@@ -7,7 +7,7 @@ import Testing
 /// Runs the real NIO server on an ephemeral port in front of `FakeHome`.
 final class TestServer: Sendable {
     let home = FakeHome()
-    let events = EventHub()
+    let events: EventHub
     let port: Int
     private let task: Task<Void, Never>
     private let dir: URL
@@ -15,7 +15,8 @@ final class TestServer: Sendable {
     static let control = "control-token-for-tests"
     static let read = "read-token-for-tests"
 
-    init(idleTimeout: Duration = .seconds(120)) async throws {
+    init(idleTimeout: Duration = .seconds(120), events: EventHub = EventHub()) async throws {
+        self.events = events
         dir = FileManager.default.temporaryDirectory.appending(path: "homerelay-http-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let tokenFile = dir.appending(path: "tokens.json")
@@ -65,7 +66,10 @@ final class TestServer: Sendable {
         let server = try await TestServer()
         let (status, data) = try await server.request("GET", "/api/v1/health", token: nil)
         #expect(status == 200)
-        #expect(try server.object(data) == ["status": .string("ok"), "service": .string("homerelay"), "version": .string("test"), "homekit": .string("ready")])
+        #expect(try server.object(data) == [
+            "status": .string("ok"), "service": .string("homerelay"), "version": .string("test"),
+            "homekit": .string("ready"), "eventLog": .string("off"),
+        ])
 
         await server.home.setReady(false)
         let (_, degraded) = try await server.request("GET", "/api/v1/health", token: nil)
@@ -166,9 +170,9 @@ final class TestServer: Sendable {
         #expect((response as! HTTPURLResponse).value(forHTTPHeaderField: "Content-Type") == "text/event-stream")
 
         // Wait until the subscription is registered before publishing.
-        while await server.events.subscriberCount == 0 { try await Task.sleep(for: .milliseconds(20)) }
-        await server.events.publish(HomeEvent(type: "characteristic", accessoryId: "FAN-1", characteristic: "active", value: .int(1)))
-        await server.events.publish(HomeEvent(type: "characteristic", accessoryId: "LAMP-1", characteristic: "on", value: .bool(true)))
+        while server.events.subscriberCount == 0 { try await Task.sleep(for: .milliseconds(20)) }
+        server.events.publish(HomeEvent(type: "characteristic", accessoryId: "FAN-1", characteristic: "active", value: .int(1)))
+        server.events.publish(HomeEvent(type: "characteristic", accessoryId: "LAMP-1", characteristic: "on", value: .bool(true)))
 
         var received: [String] = []
         for try await line in bytes.lines where line.hasPrefix("data: ") {

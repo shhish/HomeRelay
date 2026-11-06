@@ -79,6 +79,22 @@ def listen(
         pass
 
 
+def first_replayed_id(base: str, token: str, since: int) -> int | None:
+    """Opens the stream at `since` and returns the first event id replayed."""
+    req = urllib.request.Request(
+        f"{base}/api/v1/events?since={since}", headers={"Authorization": f"Bearer {token}"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            for raw in resp:
+                line = raw.decode().strip()
+                if line.startswith("id: "):
+                    return int(line[4:])
+    except Exception:
+        return None
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:18796")
@@ -128,6 +144,26 @@ def main() -> int:
                 base, "GET", "/api/v1/accessories/" + urllib.parse.quote(first["id"]), token
             )
             check("accessory by id", status == 200 and one["id"] == first["id"], first["name"])
+
+        if health.get("eventLog") == "ok":
+            status, stats = call(base, "GET", "/api/v1/events/stats?hours=24", token)
+            latest = stats.get("latestSeq", 0) if status == 200 else 0
+            check(
+                "event log stats",
+                status == 200,
+                f"seq {latest}, {stats.get('rows')} rows, {stats.get('bytes', 0) // 1024} KB, "
+                f"24h by origin {stats.get('byOrigin')}"
+                if status == 200
+                else json.dumps(stats),
+            )
+            if latest > 0:
+                # Samples aren't streamed, so the newest few may all be hidden; replay from the start.
+                replayed = first_replayed_id(base, token, 0)
+                check(
+                    "stream replays from since",
+                    replayed is not None and 0 < replayed <= latest,
+                    f"since=0 -> first id {replayed}",
+                )
 
         if not args.write:
             check(
