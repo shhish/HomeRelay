@@ -13,13 +13,12 @@ public enum SeriesKind: String, Codable, Sendable {
 
     /// Characteristic types that are states even when HomeKit gives no valid-values list.
     static let enumTypes: Set<String> = [
-        "currentDoorState", "targetDoorState", "lockCurrentState", "lockTargetState",
-        "currentHeatingCoolingState", "targetHeatingCoolingState", "currentHeaterCoolerState", "targetHeaterCoolerState",
-        "airQuality", "securitySystemCurrentState", "securitySystemTargetState", "currentAirPurifierState",
-        "targetAirPurifierState", "currentHumidifierDehumidifierState", "targetHumidifierDehumidifierState",
-        "positionState", "inUse", "programMode", "statusFault", "chargingState", "statusLowBattery",
-        "currentFanState", "targetFanState", "swingMode", "rotationDirection", "temperatureDisplayUnits",
-        "carbonMonoxideDetected", "carbonDioxideDetected", "smokeDetected", "currentSlatState",
+        // HomeRelay's names (HomeKitNames.swift), not Apple's.
+        "doorState", "doorTarget", "lockState", "lockTarget", "currentHeatingCooling", "targetHeatingCooling",
+        "temperatureUnits", "airQuality", "purifierState", "purifierMode", "positionState", "fanState", "fanMode",
+        "charging", "swing", "rotationDirection", "currentHeaterCoolerState", "targetHeaterCoolerState",
+        "currentHumidifierDehumidifierState", "targetHumidifierDehumidifierState", "securitySystemCurrentState",
+        "securitySystemTargetState", "currentSlatState", "programMode", "buttonEvent",
     ]
 
     /// Picks a kind from HomeKit metadata, falling back to the value's own type.

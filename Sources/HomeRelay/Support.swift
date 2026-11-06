@@ -17,6 +17,8 @@ struct Config: Sendable {
     var historyDir: URL?
     /// Where history backups go (internal disk).
     var backupDir: URL
+    /// Virtual accessories (States).
+    var statesFile: URL
     var logReads: Bool
 
     static let defaultPort = 18796
@@ -46,6 +48,7 @@ struct Config: Sendable {
             eventLogFile: eventLog,
             historyDir: env["HOMERELAY_HISTORY_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0, directoryHint: .isDirectory) },
             backupDir: env["HOMERELAY_BACKUP_DIR"].map { URL(filePath: $0, directoryHint: .isDirectory) } ?? support.appending(path: "backups", directoryHint: .isDirectory),
+            statesFile: env["HOMERELAY_STATES_FILE"].map { URL(filePath: $0) } ?? support.appending(path: "states.json"),
             logReads: env["HOMERELAY_LOG_READS"] == "1"
         )
     }

@@ -34,6 +34,10 @@ Wherever a path takes `{ref}`, use an id or a name:
 | POST | `/scenes/{ref}/run` | control | Run a scene |
 | GET | `/events?accessory=ID,ID&since=SEQ` | read | Server-sent events stream of changes, resumable (see below) |
 | GET | `/events/stats?hours=24` | read | Event log size, position and event counts by type and origin over the window |
+| GET | `/states` | read | Virtual accessories ("States") and their values |
+| POST | `/states` | control | Create one: `{"name": "Guest mode", "kind": "switch", "resetAfter": 3600}` |
+| PUT | `/states/{ref}` | control | `{"on": true}`; also `name` and `resetAfter` (seconds, or null) |
+| DELETE | `/states/{ref}` | control | Remove a State |
 | GET | `/history/series?accessory=ID&type=` | read | Recorded series: id, characteristic id, kind, unit, names, first and last seen |
 | GET | `/history?series=ID,ID&from=&to=&step=auto` | read | Values over a time range (see History) |
 | GET | `/history/summary?series=ID&window=1h` | read | One series summarised over a recent window, up to `14d` |
@@ -132,6 +136,15 @@ data: {"type":"gap","missingFrom":1001,"missingTo":2000,"reason":"expired","stor
 
   `reason` is `expired` (older than the log keeps), `lost` (never written: a disk failure, or the last second before a crash) or `reset` (`since` is ahead of the log or `store` doesn't match, so it came from a different install; `missingTo` is absent). The range is in raw `seq` numbers and may include events your filter wouldn't have shown. After a gap, fetch `/snapshot` for current state.
 - Without `since`, the stream starts live, as before.
+
+## States
+
+States are on/off values HomeRelay keeps itself, for things the house should remember: "Guest mode", "Movie time", "Garage open too long". Routines and clients set them; the HomeKit bridge (when enabled) shows them in the Home app, where a `switch` can be flipped by hand or with Siri and a sensor (`contact`, `motion`, `occupancy`, `leak`) can trigger Apple Home automations.
+
+- `{ref}` is the State's `id` (a slug of its first name, such as `guest-mode`), `state:<id>`, or its name.
+- A change is a `characteristic` event on accessory `state:<id>` (room `States`, characteristic `on`, characteristic id `state:<id>:on`), so the event log, history and routines treat States like any device. `origin` is `write`, `bridge` (the Home app) or `reset`.
+- `resetAfter` turns a State off that many seconds after it was turned on, even across restarts.
+- At most 149 States (one HomeKit bridge holds 150 accessories, one being the bridge). Each keeps its bridge accessory id (`aid`) for life, so the Home app keeps its room and automations.
 
 ## History
 

@@ -7,6 +7,8 @@ public struct APIRouter: Sendable {
     public let events: EventHub
     /// Long-term history and recent-window summaries; nil without an event log.
     public let history: History?
+    /// Virtual accessories; nil when not configured.
+    public let states: StateStore?
     public let version: String
     public let heartbeat: Duration
     /// Successful reads are frequent (an ESP32 may poll), so they are only
@@ -16,13 +18,15 @@ public struct APIRouter: Sendable {
     public let log: @Sendable (String) -> Void
 
     public init(
-        backend: any HomeBackend, tokens: TokenStore, events: EventHub, history: History? = nil, version: String,
+        backend: any HomeBackend, tokens: TokenStore, events: EventHub, history: History? = nil,
+        states: StateStore? = nil, version: String,
         heartbeat: Duration = .seconds(15), logReads: Bool = false, log: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.backend = backend
         self.tokens = tokens
         self.events = events
         self.history = history
+        self.states = states
         self.version = version
         self.heartbeat = heartbeat
         self.logReads = logReads
@@ -138,6 +142,41 @@ public struct APIRouter: Sendable {
                 since = nil
             }
             return eventStream(since: since, store: q["store"], accessoryIds: q["accessory"].map { Set($0.split(separator: ",").map(String.init)) })
+        case ("GET", 1, "states"):
+            return try json(await requireStates().list())
+        case ("GET", 2, "states"):
+            return try json(await requireStates().get(rest[1]))
+        case ("POST", 1, "states"):
+            try requireControl(token)
+            let body = try decodeObject(request.body)
+            guard case .string(let name)? = body["name"] else { throw APIError.badRequest("Body needs a name") }
+            let kind: String
+            if case .string(let k)? = body["kind"] { kind = k } else { kind = "switch" }
+            let reset = try Self.optionalSeconds(body["resetAfter"])
+            return try json(await requireStates().create(name: name, kind: kind, resetAfter: reset ?? nil, by: token.name), status: 201)
+        case ("POST", 2, "states"), ("PUT", 2, "states"), ("PATCH", 2, "states"):
+            try requireControl(token)
+            let body = try decodeObject(request.body)
+            let store = try requireStates()
+            var state = try await store.get(rest[1])
+            if body["name"] != nil || body.keys.contains("resetAfter") {
+                var name: String?
+                if let raw = body["name"] {
+                    guard case .string(let n) = raw else { throw APIError.badRequest("name must be text") }
+                    name = n
+                }
+                let reset: Int?? = body.keys.contains("resetAfter") ? try Self.optionalSeconds(body["resetAfter"]) : nil
+                state = try await store.update(state.id, name: name, resetAfter: reset)
+            }
+            if let raw = body["on"] {
+                guard let on = raw.boolValue else { throw APIError.unprocessable("on must be true or false") }
+                state = try await store.set(state.id, on: on, by: token.name, cause: RequestContext.cause)
+            }
+            return try json(state)
+        case ("DELETE", 2, "states"):
+            try requireControl(token)
+            try await requireStates().delete(rest[1])
+            return try json(["deleted": rest[1]])
         case ("GET", 2, "history") where rest[1] == "series":
             return try json(await requireHistory().series(accessory: q["accessory"], type: q["type"]))
         case ("GET", 1, "history"):
@@ -187,6 +226,22 @@ public struct APIRouter: Sendable {
         return try json(status, status: status.healthy ? 200 : 503)
     }
 
+    private func requireStates() throws(APIError) -> StateStore {
+        guard let states else { throw APIError.notFound("States are off") }
+        return states
+    }
+
+    /// `resetAfter`: seconds, or null to clear. Returns nil when absent.
+    static func optionalSeconds(_ raw: JSONValue?) throws(APIError) -> Int?? {
+        switch raw {
+        case nil: return nil
+        case .null?: return .some(nil)
+        case .int(let n)?: return .some(n)
+        case .double(let d)? where d == d.rounded(): return .some(Int(d))
+        default: throw .badRequest("resetAfter must be a whole number of seconds or null")
+        }
+    }
+
     private func requireHistory() throws(APIError) -> History {
         guard let history else { throw APIError.notFound("History is off: it needs the event log") }
         return history
@@ -230,7 +285,7 @@ public struct APIRouter: Sendable {
     static let corsHeaders: [(String, String)] = [
         ("Access-Control-Allow-Origin", "*"),
         ("Access-Control-Allow-Headers", "Authorization, Content-Type, Last-Event-ID, X-HomeRelay-Cause"),
-        ("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, OPTIONS"),
+        ("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"),
         ("Access-Control-Expose-Headers", "X-HomeRelay-Store"),
     ]
 

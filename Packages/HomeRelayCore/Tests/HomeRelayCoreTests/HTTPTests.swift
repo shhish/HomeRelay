@@ -15,7 +15,7 @@ final class TestServer: Sendable {
     static let control = "control-token-for-tests"
     static let read = "read-token-for-tests"
 
-    init(idleTimeout: Duration = .seconds(120), events: EventHub = EventHub(), history: History? = nil) async throws {
+    init(idleTimeout: Duration = .seconds(120), events: EventHub = EventHub(), history: History? = nil, states: StateStore? = nil) async throws {
         self.events = events
         dir = FileManager.default.temporaryDirectory.appending(path: "homerelay-http-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -26,7 +26,7 @@ final class TestServer: Sendable {
         """
         try Data(json.utf8).write(to: tokenFile)
 
-        let router = APIRouter(backend: home, tokens: TokenStore(path: tokenFile), events: events, history: history, version: "test", heartbeat: .milliseconds(200))
+        let router = APIRouter(backend: home, tokens: TokenStore(path: tokenFile), events: events, history: history, states: states, version: "test", heartbeat: .milliseconds(200))
         let idle = TimeAmount.milliseconds(Int64(idleTimeout / .milliseconds(1)))
         let server = HTTPServer(host: "127.0.0.1", port: 0, idleTimeout: idle) { await router.handle($0) }
         let (portStream, portContinuation) = AsyncStream<Int>.makeStream()

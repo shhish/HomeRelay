@@ -65,7 +65,8 @@ import Testing
     @Test func kindsFromMetadata() {
         #expect(SeriesKind.infer(type: "on", format: "bool", validValues: nil, min: nil, max: nil, sample: nil) == .binary)
         #expect(SeriesKind.infer(type: "contactSensorState", format: "uint8", validValues: [0, 1], min: 0, max: 1, sample: nil) == .binary)
-        #expect(SeriesKind.infer(type: "lockCurrentState", format: "uint8", validValues: nil, min: 0, max: 3, sample: nil) == .enumerated)
+        #expect(SeriesKind.infer(type: "lockState", format: "uint8", validValues: nil, min: 0, max: 3, sample: nil) == .enumerated)
+        #expect(SeriesKind.infer(type: "doorState", format: "uint8", validValues: nil, min: 0, max: 4, sample: nil) == .enumerated)
         #expect(SeriesKind.infer(type: "brightness", format: "int", validValues: nil, min: 0, max: 100, sample: nil) == .numeric)
         #expect(SeriesKind.infer(type: "currentTemperature", format: "float", validValues: nil, min: nil, max: nil, sample: nil) == .numeric)
         #expect(SeriesKind.infer(type: "x", format: nil, validValues: nil, min: nil, max: nil, sample: .string("a")) == .text)

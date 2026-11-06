@@ -299,6 +299,7 @@ public final class History: @unchecked Sendable {
                        [.text(log.storeId), .text(zone.identifier)])
             rollups = db
             try loadCatalog()
+            try reclassify()
             state.withLock { s in
                 if s.cold != .ok { logger("History: using \(dir.path)") }
                 s.cold = .ok
@@ -351,6 +352,35 @@ public final class History: @unchecked Sendable {
             )
             catalog[record.characteristicId] = record
         }
+    }
+
+    /// Series filed as numeric before a type was known to be a state (a door,
+    /// a lock, a mode) move to `enum`, and their buckets are recomputed.
+    private func reclassify() throws {
+        guard let db = rollups else { return }
+        let stale = catalog.values.filter { $0.kind == .numeric && SeriesKind.enumTypes.contains($0.type) }
+        guard !stale.isEmpty else { return }
+        var dirty: Set<DirtyKey> = []
+        for record in stale {
+            for month in rawMonths() {
+                guard let raw = try monthDB(month, create: false) else { continue }
+                let stmt = try raw.prepare("SELECT DISTINCT ts_ms FROM samples WHERE series_id = ?")
+                try stmt.bind([.int(record.id)])
+                while try stmt.step() {
+                    for step in BucketStep.allCases {
+                        dirty.insert(DirtyKey(series: record.id, step: step, bucket: step.start(of: stmt.int(0), in: zone)))
+                    }
+                }
+            }
+        }
+        try db.transaction {
+            for record in stale {
+                try db.run("UPDATE series SET kind = 'enum' WHERE series_id = ?", [.int(record.id)])
+                catalog[record.characteristicId]?.kind = .enumerated
+            }
+            try recompute(dirty)
+        }
+        logger("History: refiled \(stale.count) series as states (\(stale.map(\.type).sorted().joined(separator: ", ")))")
     }
 
     /// Notes the hot session table; a session newly known to have ended makes

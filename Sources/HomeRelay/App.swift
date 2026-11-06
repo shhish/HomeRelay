@@ -14,6 +14,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     private var events = EventHub()
     private var terminateSource: DispatchSourceSignal?
     private var history: History?
+    private var states: StateStore?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         let config = Config.fromEnvironment()
@@ -69,11 +70,20 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             Log.info(config.historyDir.map { "History at \($0.path)" } ?? "History directory not set; summaries only")
         }
 
+        do {
+            let states = try StateStore(path: config.statesFile, hub: events)
+            Task { await states.start() }
+            self.states = states
+        } catch {
+            Log.error("States unavailable: \(error)")
+        }
+
         let router = APIRouter(
             backend: store,
             tokens: TokenStore(path: config.tokensFile),
             events: events,
             history: history,
+            states: states,
             version: Config.version,
             logReads: config.logReads,
             log: { Log.info($0) }
