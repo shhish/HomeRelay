@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🏠 HomeRelay
+# HomeRelay
 
 **Your Apple Home, as a local API anything can talk to.**
 
@@ -12,7 +12,7 @@ HomeRelay runs on an always-on Mac and lets them read and control every light, l
 ![macOS 26+](https://img.shields.io/badge/macOS-26+-000000?style=flat-square&logo=apple&logoColor=white)
 ![REST + SSE](https://img.shields.io/badge/API-REST_+_live_events-2ea44f?style=flat-square)
 
-[What you can do](#-what-you-can-do) · [Devices](#-every-device-in-your-home-app) · [How it works](#-how-it-works) · [Setup](#-setup) · [API reference](docs/API.md)
+[What you can do](#what-you-can-do) · [Devices](#every-device-in-your-home-app) · [How it works](#how-it-works) · [Setup](#setup) · [API reference](docs/API.md)
 
 </div>
 
@@ -24,21 +24,21 @@ HomeRelay runs on an always-on Mac and lets them read and control every light, l
   <sub>The <a href="https://github.com/shhish/orb">Orb</a>, a round ESP32 screen, showing rooms and scenes it gets from HomeRelay.</sub>
 </p>
 
-## 💡 What you can do
+## What you can do
 
 | Ask HomeRelay… | …with one request |
 | --- | --- |
-| 🛋️ What's on in the living room? | `GET /accessories?room=Living Room` |
-| 💡 Floor lamp on, 40% | `POST /accessories/Floor Lamp` `{"on": true, "brightness": 40}` |
-| 🌙 Run "Good Night" | `POST /scenes/Good Night/run` |
-| 🔒 Is the front door locked? | `GET /accessories/Front Door` → `"lockState": 1` |
-| 🌡️ Set the thermostat to 21 °C | `POST /accessories/Thermostat` `{"targetTemperature": 21}` |
-| 🔔 Tell me the moment anything changes | `GET /events` (a live stream) |
-| ⏪ What happened while I was offline? | `GET /events?since=4182` (replays the last 14 days) |
+| What's on in the living room? | `GET /accessories?room=Living Room` |
+| Floor lamp on, 40% | `POST /accessories/Floor Lamp` `{"on": true, "brightness": 40}` |
+| Run "Good Night" | `POST /scenes/Good Night/run` |
+| Is the front door locked? | `GET /accessories/Front Door` → `"lockState": 1` |
+| Set the thermostat to 21 °C | `POST /accessories/Thermostat` `{"targetTemperature": 21}` |
+| Tell me the moment anything changes | `GET /events` (a live stream) |
+| What happened while I was offline? | `GET /events?since=4182` (replays the last 14 days) |
 
 Use the names from the Home app (URL-encoded, and `Bedroom/Lamp` if two rooms both have one), or ids that never change.
 
-## 🏡 Every device in your Home app
+## Every device in your Home app
 
 If it shows up in the Home app, HomeRelay can see it, whether it's native HomeKit, **Matter**, **Thread**, Wi-Fi, a **Hue** bridge or something brought in through **Homebridge**.
 
@@ -55,18 +55,18 @@ If it shows up in the Home app, HomeRelay can see it, whether it's native HomeKi
 
 Values are made to fit: `"on"`, `1` and `true` all work, and a brightness of 150 becomes 100. Turning a light on happens before changing its brightness, and turning it off happens last, so lights don't flicker back on.
 
-## 🧩 How it works
+## How it works
 
 ```mermaid
 flowchart LR
-  ESP["📟 ESP32 gadgets"] --> HR
-  PI["🍓 Raspberry Pi"] --> HR
-  DASH["📊 Dashboards"] --> HR
-  AGENT["🤖 AI agents"] --> HR
+  ESP["ESP32 gadgets"] --> HR
+  PI["Raspberry Pi"] --> HR
+  DASH["Dashboards"] --> HR
+  AGENT["AI agents"] --> HR
 
-  HR{{"🏠 HomeRelay<br/>on an always-on Mac"}}
+  HR{{"HomeRelay<br/>on an always-on Mac"}}
 
-  HR -- HomeKit --> HOME[("🍎 Apple Home")]
+  HR -- HomeKit --> HOME[("Apple Home")]
   HOME --- NATIVE["HomeKit · Matter · Thread"]
   HOME --- BRIDGES["Hue · Homebridge · Wi-Fi"]
 ```
@@ -75,7 +75,7 @@ Every client talks plain HTTP with its own token: REST to read and change things
 
 Only Apple devices can control an Apple Home, and HomeKit accessories can't be shared with anything else. So a Mac that stays on, signed in to your Home, does it on everyone else's behalf.
 
-## ✨ What you get
+## What you get
 
 - **Live events.** A Server-Sent Events stream pushes every change: a light turned on, a door opened, a sensor tripped, a device going offline.
 - **Resumable.** Events are kept on disk for 14 days. Reconnect with the last number you saw and get what you missed, without duplicates.
@@ -88,7 +88,7 @@ Only Apple devices can control an Apple Home, and HomeKit accessories can't be s
 > [!WARNING]
 > HomeRelay is meant for your home network. Don't expose it to the internet.
 
-## 🚀 Setup
+## Setup
 
 **You need:** a Mac on macOS 26+ that stays on and is signed in to the iCloud account that owns the Home, plus Xcode 26+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and a paid Apple Developer account (HomeKit needs the HomeKit capability on your App ID).
 
@@ -109,7 +109,7 @@ curl -H "Authorization: Bearer $TOKEN" http://my-mac.local:18796/api/v1/scenes
 The whole API, with examples, is in [docs/API.md](docs/API.md).
 
 <details>
-<summary><b>⚙️ Running it, settings and layout</b></summary>
+<summary><b>Running it, settings and layout</b></summary>
 
 <br/>
 
@@ -146,7 +146,7 @@ cd Packages/HomeRelayCore && swift test
 ```
 </details>
 
-## 🤝 Related projects
+## Related projects
 
 - **[Orb](https://github.com/shhish/orb)**: a round ESP32 display that shows your rooms and runs scenes through HomeRelay.
 - **[Switchboard](https://github.com/shhish/switchboard)**: gives AI agents (Claude, Codex, ChatGPT) Apple Home tools through HomeRelay, with approvals for locks and garage doors.
