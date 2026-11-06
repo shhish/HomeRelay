@@ -49,7 +49,17 @@ actor StateBridge {
         self.states = states
     }
 
+    /// Starts the bridge, retrying every minute while it can't (for example
+    /// until Local Network access is allowed for HomeRelay in System Settings).
     func start() async {
+        var delay: Duration = .seconds(60)
+        while !(await attempt()) {
+            try? await Task.sleep(for: delay)
+            delay = min(delay * 2, .seconds(600))
+        }
+    }
+
+    private func attempt() async -> Bool {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             lock = try StorageDirectoryLock(directory: directory)
@@ -57,8 +67,13 @@ actor StateBridge {
             self.pairings = pairings
             // A paired bridge must never mint a new identity: that would orphan the pairing.
             let paired = await pairings.isPaired
-            let saved = try await FileAccessoryIdentityStore(url: directory.appending(path: "identity.json"), allowsCreation: !paired)
-                .loadOrCreate(setupCode: AccessoryIdentity.generateSetupCode())
+            // The store insists on the same setup code every launch; it's saved with the identity.
+            let identityURL = directory.appending(path: "identity.json")
+            let code = (try? Data(contentsOf: identityURL))
+                .flatMap { try? JSONDecoder().decode(AccessoryIdentity.self, from: $0) }?.setupCode
+                ?? AccessoryIdentity.generateSetupCode()
+            let saved = try await FileAccessoryIdentityStore(url: identityURL, allowsCreation: !paired)
+                .loadOrCreate(setupCode: code)
             identity = saved
             let bridge = try HAPBridge(
                 info: Self.info("HomeRelay States", serial: "homerelay-bridge"),
@@ -77,10 +92,29 @@ actor StateBridge {
                 Task { await self?.sync(list) }
             }
             Log.info("HomeKit bridge on port \(port) with \(published.count) States; \(paired ? "paired" : "waiting to be paired")")
+            lastError = nil
+            return true
         } catch {
-            lastError = "\(error)"
-            Log.error("HomeKit bridge failed to start: \(error)")
+            let message = Self.explain(error)
+            if message != lastError { Log.error("HomeKit bridge failed to start: \(message); retrying") }
+            lastError = message
+            // Release everything so the next attempt starts clean.
+            await service?.stop()
+            service = nil
+            bridge = nil
+            pairings = nil
+            published = [:]
+            lock = nil
+            return false
         }
+    }
+
+    /// The Bonjour refusal macOS gives when Local Network access is off.
+    private static func explain(_ error: Error) -> String {
+        let text = "\(error)"
+        return text.contains("-65555")
+            ? "Bonjour refused (\(text)): allow HomeRelay under System Settings → Privacy & Security → Local Network"
+            : text
     }
 
     func status() async -> Status {
