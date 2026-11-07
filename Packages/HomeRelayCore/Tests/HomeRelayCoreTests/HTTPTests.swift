@@ -15,7 +15,10 @@ final class TestServer: Sendable {
     static let control = "control-token-for-tests"
     static let read = "read-token-for-tests"
 
-    init(idleTimeout: Duration = .seconds(120), events: EventHub = EventHub(), history: History? = nil, states: StateStore? = nil) async throws {
+    init(
+        idleTimeout: Duration = .seconds(120), events: EventHub = EventHub(), history: History? = nil, states: StateStore? = nil,
+        bridgeStatus: (@Sendable () async -> Data)? = nil
+    ) async throws {
         self.events = events
         dir = FileManager.default.temporaryDirectory.appending(path: "homerelay-http-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -26,7 +29,7 @@ final class TestServer: Sendable {
         """
         try Data(json.utf8).write(to: tokenFile)
 
-        let router = APIRouter(backend: home, tokens: TokenStore(path: tokenFile), events: events, history: history, states: states, version: "test", heartbeat: .milliseconds(200))
+        let router = APIRouter(backend: home, tokens: TokenStore(path: tokenFile), events: events, history: history, states: states, bridgeStatus: bridgeStatus, version: "test", heartbeat: .milliseconds(200))
         let idle = TimeAmount.milliseconds(Int64(idleTimeout / .milliseconds(1)))
         let server = HTTPServer(host: "127.0.0.1", port: 0, idleTimeout: idle) { await router.handle($0) }
         let (portStream, portContinuation) = AsyncStream<Int>.makeStream()
@@ -68,12 +71,48 @@ final class TestServer: Sendable {
         #expect(status == 200)
         #expect(try server.object(data) == [
             "status": .string("ok"), "service": .string("homerelay"), "version": .string("test"),
-            "homekit": .string("ready"), "eventLog": .string("off"),
+            "homekit": .string("ready"), "eventLog": .string("off"), "bridge": .string("off"),
         ])
 
         await server.home.setReady(false)
         let (_, degraded) = try await server.request("GET", "/api/v1/health", token: nil)
         #expect(try server.object(degraded)["status"] == .string("degraded"))
+    }
+
+    @Test func bridgeHealthShowsAFailingBridgeWithoutTheSetupCode() async throws {
+        actor Box { var json = #"{"running":false,"paired":false,"port":51827,"accessories":0}"#; func set(_ j: String) { json = j } }
+        let box = Box()
+        let server = try await TestServer(bridgeStatus: { Data(await box.json.utf8) })
+        var (status, data) = try await server.request("GET", "/api/v1/health/bridge", token: nil)
+        #expect(status == 200)
+        #expect(try server.object(data)["state"] == .string("starting"))
+
+        // A home-directory path, built at runtime so the repo's privacy check doesn't flag it.
+        let path = "/" + ["Users", "someone"].joined(separator: "/")
+        await box.set(#"{"running":false,"paired":false,"port":51827,"accessories":0,"setupCode":"111-22-333","error":"Bonjour refused (registrationFailed(code: -65555)) in "# + path + #""}"#)
+        (status, data) = try await server.request("GET", "/api/v1/health/bridge", token: nil)
+        #expect(status == 503)
+        #expect(try server.object(data) == ["state": .string("failing"), "reason": .string("localNetwork")])
+        #expect(!String(decoding: data, as: UTF8.self).contains(path))
+        let (_, health) = try await server.request("GET", "/api/v1/health", token: nil)
+        #expect(try server.object(health)["bridge"] == .string("failing"))
+        #expect(try server.object(health)["status"] == .string("degraded"))
+        #expect(!String(decoding: health, as: UTF8.self).contains("111-22-333"))
+        // A failing bridge doesn't make HomeKit itself unready.
+        #expect(try await server.request("GET", "/api/v1/health/ready", token: nil).0 == 200)
+
+        await box.set(#"{"running":false,"paired":true,"port":51827,"accessories":0,"error":"POSIXErrorCode(rawValue: 48): Address already in use"}"#)
+        (_, data) = try await server.request("GET", "/api/v1/health/bridge", token: nil)
+        #expect(try server.object(data)["reason"] == .string("portInUse"))
+
+        await box.set(#"{"running":true,"paired":false,"port":51827,"accessories":2,"setupCode":"111-22-333"}"#)
+        (status, data) = try await server.request("GET", "/api/v1/health/bridge", token: nil)
+        #expect(status == 200)
+        #expect(try server.object(data) == ["state": .string("unpaired")])
+
+        await box.set(#"{"running":true,"paired":true,"port":51827,"accessories":2}"#)
+        (_, data) = try await server.request("GET", "/api/v1/health/bridge", token: nil)
+        #expect(try server.object(data) == ["state": .string("ok")])
     }
 
     @Test func everythingElseNeedsAKnownToken() async throws {

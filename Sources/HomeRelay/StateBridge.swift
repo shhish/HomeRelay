@@ -49,8 +49,9 @@ actor StateBridge {
         self.states = states
     }
 
-    /// Starts the bridge, retrying every minute while it can't (for example
-    /// until Local Network access is allowed for HomeRelay in System Settings).
+    /// Starts the bridge, retrying every minute (backing off to ten) while it
+    /// can't, for example while its port is taken. `/health/bridge` answers 503
+    /// meanwhile.
     func start() async {
         var delay: Duration = .seconds(60)
         while !(await attempt()) {
@@ -109,11 +110,12 @@ actor StateBridge {
         }
     }
 
-    /// The Bonjour refusal macOS gives when Local Network access is off.
+    /// The Bonjour refusal macOS gives when Local Network access is off. macOS
+    /// decides that once per process, so allowing it later needs a relaunch.
     private static func explain(_ error: Error) -> String {
         let text = "\(error)"
         return text.contains("-65555")
-            ? "Bonjour refused (\(text)): allow HomeRelay under System Settings → Privacy & Security → Local Network"
+            ? "Bonjour refused (\(text)): allow HomeRelay under System Settings → Privacy & Security → Local Network, then restart HomeRelay"
             : text
     }
 

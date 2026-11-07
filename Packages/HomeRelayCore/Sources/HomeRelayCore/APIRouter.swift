@@ -49,6 +49,8 @@ public struct APIRouter: Sendable {
                 response = try await health(strict: true)
             } else if request.segments == ["api", "v1", "health", "history"] {
                 response = try await historyHealth()
+            } else if request.segments == ["api", "v1", "health", "bridge"] {
+                response = try await bridgeHealth()
             } else {
                 let token = try authenticate(request)
                 caller = token.name
@@ -220,11 +222,14 @@ public struct APIRouter: Sendable {
             var version: String
             var homekit: String
             var eventLog: String
+            var bridge: String
             var history: History.Status?
         }
+        let bridge = await bridgeState()
         let body = Health(
-            status: status.isReady ? "ok" : "degraded", version: version, homekit: status.state,
-            eventLog: events.log?.health ?? "off", history: await history?.status()
+            status: status.isReady && bridge.state != "failing" ? "ok" : "degraded", version: version,
+            homekit: status.state, eventLog: events.log?.health ?? "off", bridge: bridge.state,
+            history: await history?.status()
         )
         return try json(body, status: strict && !status.isReady ? 503 : 200)
     }
@@ -235,6 +240,40 @@ public struct APIRouter: Sendable {
         guard let history else { return try json(["history": "off"]) }
         let status = await history.status()
         return try json(status, status: status.healthy ? 200 : 503)
+    }
+
+    /// The HomeKit bridge as health sees it. Public, so it carries neither the
+    /// setup code nor the error text (which can hold file paths); `GET /bridge` has both.
+    struct BridgeHealth: Codable {
+        /// `off`, `starting`, `ok` (running and paired), `unpaired` (running, waiting to
+        /// be added in the Home app) or `failing` (can't start; it keeps retrying).
+        var state: String
+        /// While failing: `localNetwork` (Local Network access is off), `portInUse` or `other`.
+        var reason: String?
+    }
+
+    func bridgeState() async -> BridgeHealth {
+        guard let bridgeStatus else { return BridgeHealth(state: "off") }
+        struct Status: Decodable {
+            var running: Bool
+            var paired: Bool
+            var error: String?
+        }
+        guard let s = try? JSONDecoder().decode(Status.self, from: await bridgeStatus()) else {
+            return BridgeHealth(state: "failing", reason: "other")
+        }
+        if s.running { return BridgeHealth(state: s.paired ? "ok" : "unpaired") }
+        guard let error = s.error else { return BridgeHealth(state: "starting") }
+        let reason = error.contains("-65555") ? "localNetwork"
+            : error.contains("rawValue: 48") || error.localizedCaseInsensitiveContains("address already in use") ? "portInUse"
+            : "other"
+        return BridgeHealth(state: "failing", reason: reason)
+    }
+
+    /// 200 unless the bridge is failing to start, for status-code monitors.
+    private func bridgeHealth() async throws -> HTTPResponse {
+        let bridge = await bridgeState()
+        return try json(bridge, status: bridge.state == "failing" ? 503 : 200)
     }
 
     private func requireStates() throws(APIError) -> StateStore {

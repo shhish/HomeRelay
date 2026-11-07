@@ -20,7 +20,7 @@ Wherever a path takes `{ref}`, use an id or a name:
 
 | Method | Path | Scope | What it does |
 |---|---|---|---|
-| GET | `/health` | none | `{"status":"ok"\|"degraded","homekit":"ready"\|"starting"\|"notAuthorized"\|"noHomes","eventLog":"ok"\|"failing"\|"off","history":{…},"service","version"}` |
+| GET | `/health` | none | `{"status":"ok"\|"degraded","homekit":"ready"\|"starting"\|"notAuthorized"\|"noHomes","eventLog":"ok"\|"failing"\|"off","bridge":"ok"\|"unpaired"\|"starting"\|"failing"\|"off","history":{…},"service","version"}`; `degraded` when HomeKit isn't ready or the bridge is failing |
 | GET | `/health/ready` | none | The same body; `503` unless HomeKit is ready (for monitors) |
 | GET | `/homes` | read | Homes with room, accessory and scene counts |
 | GET | `/snapshot?refresh=1&compact=1` | read | Everything: rooms, accessories (with services and characteristics) and scenes, per home |
@@ -43,6 +43,7 @@ Wherever a path takes `{ref}`, use an id or a name:
 | GET | `/history?series=ID,ID&from=&to=&step=auto` | read | Values over a time range (see History) |
 | GET | `/history/summary?series=ID&window=1h` | read | One series summarised over a recent window, up to `14d` |
 | GET | `/health/history` | none | History status; `503` when unhealthy (for monitors) |
+| GET | `/health/bridge` | none | `{"state":…,"reason"?}` for the HomeKit bridge (states as in `/health`); while failing, `reason` is `localNetwork`, `portInUse` or `other` and the status is `503` (for monitors). The setup code and full error are only in `GET /bridge` |
 
 `refresh=1` reads from the devices any value that HomeKit isn't already keeping current through change notifications; values under notification are already live. Battery-powered devices are only read for values never seen before, since each read wakes the sensor (seconds of delay, and battery drain). A value that doesn't answer within 6 s is skipped, and not retried for 5 minutes, so one dead device doesn't slow every request. Vendor-defined (`custom.*`) values are never read; their `value` is whatever HomeKit last cached. Without `refresh`, values come from HomeKit's cache. In the background, values without notifications are re-read every 30 s, and mains-powered devices are fully re-read every 10 minutes.
 
@@ -146,7 +147,7 @@ States are on/off values HomeRelay keeps itself, for things the house should rem
 - A change is a `characteristic` event on accessory `state:<id>` (room `States`, characteristic `on`, characteristic id `state:<id>:on`), so the event log, history and routines treat States like any device. `origin` is `write`, `bridge` (the Home app) or `reset`.
 - `resetAfter` turns a State off that many seconds after it was turned on, even across restarts.
 - At most 149 States (one HomeKit bridge holds 150 accessories, one being the bridge). Each keeps its bridge accessory id (`aid`) for life, so the Home app keeps its room and automations.
-- **The HomeKit bridge** (`HOMERELAY_BRIDGE=1`) publishes every State as an accessory of a bridge called "HomeRelay States" on port 51827. Pair it once: Home app → Add Accessory → More options → HomeRelay States, then type the `setupCode` from `GET /bridge` (or scan `setupURI` rendered as a QR code). The pairing survives restarts and updates. A `contact` State reads open when on.
+- **The HomeKit bridge** (`HOMERELAY_BRIDGE=1`) publishes every State as an accessory of a bridge called "HomeRelay States" on port 51827. Pair it once: Home app → Add Accessory → More options → HomeRelay States, then type the `setupCode` from `GET /bridge` (or scan `setupURI` rendered as a QR code). The pairing survives restarts and updates. A `contact` State reads open when on. The bridge needs Local Network access: if macOS denied it, allow HomeRelay under System Settings → Privacy & Security → Local Network and restart HomeRelay (macOS only rechecks at launch). While it can't start, `/health/bridge` answers 503 and `/health` says `"bridge":"failing"`.
 
 ## History
 

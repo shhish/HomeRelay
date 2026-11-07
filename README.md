@@ -134,7 +134,7 @@ The whole API, with examples, is in [docs/API.md](docs/API.md).
 | `HOMERELAY_EVENT_LOG` | `…/HomeRelay/hot.sqlite` | Event log path; `off` disables it and stream resume |
 | `HOMERELAY_SAMPLE_MINUTES` | `60` | How often an unchanged value is still logged |
 | `HOMERELAY_HISTORY_DIR` | off | Long-term history directory on another disk; set by `scripts/history-setup` |
-| `HOMERELAY_BRIDGE` | off | `1` publishes States into Apple Home as a HomeKit bridge on `HOMERELAY_BRIDGE_PORT` (51827) |
+| `HOMERELAY_BRIDGE` | off | `1` publishes States into Apple Home as a HomeKit bridge on `HOMERELAY_BRIDGE_PORT` (51827). It needs Local Network access; `/health/bridge` says whether it runs |
 | `HOMERELAY_BACKUP_DIR` | `…/HomeRelay/backups` | Nightly history backups (internal disk) |
 
 Machine-specific values go in `Config/local.env` (one `KEY=VALUE` per line, not in git); `scripts/install.sh` passes them to the LaunchAgent.
