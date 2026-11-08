@@ -29,7 +29,7 @@ fi
 
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 pkill -x HomeRelay 2>/dev/null || true
-mkdir -p "$HOME/Applications" logs
+mkdir -p "$HOME/Applications" "$(dirname "$PLIST")" logs
 rm -rf "$APP_DEST"
 ditto build/Release/HomeRelay.app "$APP_DEST"
 

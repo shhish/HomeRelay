@@ -42,6 +42,10 @@ actor StateBridge {
     private var identity: AccessoryIdentity?
     private var published: [String: Published] = [:]
     private var lastError: String?
+    /// State snapshots, applied one at a time in order. Only the newest
+    /// waiting snapshot matters, so older ones are dropped.
+    private var updates: AsyncStream<[VirtualState]>.Continuation?
+    private var consumer: Task<Void, Never>?
 
     init(directory: URL, port: Int, states: StateStore) {
         self.directory = directory
@@ -89,9 +93,12 @@ actor StateBridge {
             )
             try await service.start(port: port)
             self.service = service
-            await states.observe { [weak self] list in
-                Task { await self?.sync(list) }
+            let (stream, continuation) = AsyncStream.makeStream(of: [VirtualState].self, bufferingPolicy: .bufferingNewest(1))
+            updates = continuation
+            consumer = Task { [weak self] in
+                for await list in stream { await self?.sync(list) }
             }
+            await states.observe { list in continuation.yield(list) }
             Log.info("HomeKit bridge on port \(port) with \(published.count) States; \(paired ? "paired" : "waiting to be paired")")
             lastError = nil
             return true
@@ -136,18 +143,26 @@ actor StateBridge {
         let ids = Set(list.map(\.id))
         let removed = published.keys.filter { !ids.contains($0) }
         let added = list.filter { published[$0.id] == nil }
-        do {
-            if !removed.isEmpty || !added.isEmpty {
+        if !removed.isEmpty || !added.isEmpty {
+            // HAPBridge rolls its layout back when the commit fails; roll ours
+            // back with it, so the next attempt adds and removes them again.
+            let before = published
+            do {
                 await bridge.beginBatchUpdate()
                 for id in removed {
                     if let p = published.removeValue(forKey: id) { try await bridge.removeAccessory(aid: p.aid) }
                 }
                 for state in added { try await add(state, to: bridge) }
                 try await bridge.endBatchUpdate()
+            } catch {
+                // Leave batch mode too, or the retry would build on a half-made batch.
+                await bridge.cancelBatchUpdate()
+                published = before
+                lastError = "\(error)"
+                Log.error("HomeKit bridge layout change failed: \(error); retrying in a minute")
+                retryLater()
+                return
             }
-        } catch {
-            lastError = "\(error)"
-            Log.error("HomeKit bridge layout change failed: \(error)")
         }
         for state in list {
             guard var p = published[state.id] else { continue }
@@ -184,13 +199,19 @@ actor StateBridge {
             await bridge.registerWriteHandler(aid: aid, iid: iid) { [weak self] value in
                 guard case .bool(let on) = value else { throw HAPError.invalidValue }
                 try await states.set(id, on: on, by: "home-app", origin: "bridge")
-                await self?.remember(id, .bool(on))
+                // The State change comes back through `sync` in order, which
+                // updates the cached value; caching it here could race with it.
             }
         }
     }
 
-    private func remember(_ id: String, _ value: HAPCharacteristicValue) {
-        published[id]?.value = value
+    private func retryLater() {
+        let states = self.states
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            let list = await states.list()
+            await self?.updates?.yield(list)
+        }
     }
 
     private static func value(for state: VirtualState) -> HAPCharacteristicValue {

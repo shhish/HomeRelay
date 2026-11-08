@@ -99,7 +99,8 @@ final class HomeKitStore: NSObject, HomeBackend {
         for h in try await selectHomes(home) {
             for a in h.accessories {
                 if let room, (a.room?.name ?? "").caseInsensitiveCompare(room) != .orderedSame { continue }
-                if let category, HomeKitNames.category(a.category) != category { continue }
+                // Filter on the category clients see, which is inferred from services.
+                if let category, Self.inferredCategory(a) != category { continue }
                 pairs.append((a, h))
             }
         }
@@ -501,6 +502,11 @@ final class HomeKitStore: NSObject, HomeBackend {
     }
 
     // MARK: - DTOs
+
+    private static func inferredCategory(_ a: HMAccessory) -> String {
+        let ordered = a.services.filter(\.isPrimaryService) + a.services.filter { !$0.isPrimaryService }
+        return CategoryInference.infer(reported: HomeKitNames.category(a.category), serviceTypes: ordered.map(HomeKitNames.service))
+    }
 
     private func dto(_ a: HMAccessory, in h: HMHome) -> AccessoryDTO {
         let services = a.services.map { s in

@@ -32,7 +32,7 @@ while true; do
         mv "$LOG" "$LOG.1"
     fi
     started=$SECONDS
-    open -n -W --stdout "$LOG" --stderr "$LOG" "${env_args[@]}" "$APP" &
+    open -n -W --stdout "$LOG" --stderr "$LOG" ${env_args[@]+"${env_args[@]}"} "$APP" &
     wait $! || true
     # A run under 30 s is a crash loop (port taken, bad build): back off to 60 s.
     if (( SECONDS - started < 30 )); then

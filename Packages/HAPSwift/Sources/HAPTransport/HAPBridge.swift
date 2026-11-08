@@ -85,6 +85,20 @@ public actor HAPBridge {
         }
     }
 
+    /// Abandons an open batch: restores the accessories it started with and
+    /// leaves batch mode, so the next ``beginBatchUpdate()`` starts clean.
+    /// Use it when building a batch fails part-way.
+    public func cancelBatchUpdate() {
+        guard isBatching else { return }
+        if let snapshot = batchSnapshot {
+            accessories = snapshot.accessories
+            instanceIDs = snapshot.ids
+            nextAID = snapshot.nextAID
+        }
+        isBatching = false
+        batchSnapshot = nil
+    }
+
     private func commitLayout() throws -> Bool {
         let layout = layoutDescription()
         guard layout != persistedLayout else { return false }

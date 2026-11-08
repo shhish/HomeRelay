@@ -80,6 +80,27 @@ struct BridgeReliabilityTests {
         #expect(await recorder.events.isEmpty)
     }
 
+    @Test func cancelledBatchRestoresLayoutAndAllowsANewBatch() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = FileBridgeConfigurationStore(url: dir.appendingPathComponent("layout.json"))
+        let bridge = try HAPBridge(info: testInfo, configurationStore: store)
+        try await bridge.addAccessory(info: testInfo, services: [.switch(startIID: 1)], aid: 2)
+        try await bridge.endBatchUpdate()
+        await bridge.beginBatchUpdate()
+        try await bridge.removeAccessory(aid: 2)
+        try await bridge.addAccessory(info: testInfo, services: [.switch(startIID: 1)], aid: 3)
+        await bridge.cancelBatchUpdate()
+        #expect(await bridge.accessoryDatabase().map(\.aid) == [1, 2])
+        // Out of batch mode: the next batch commits and bumps c#.
+        await bridge.beginBatchUpdate()
+        try await bridge.addAccessory(info: testInfo, services: [.switch(startIID: 1)], aid: 3)
+        try await bridge.endBatchUpdate()
+        #expect(await bridge.accessoryDatabase().map(\.aid) == [1, 2, 3])
+        #expect(await bridge.currentConfigurationNumber == 2)
+        #expect(try store.load()?.layout.contains("a:3:") == true)
+    }
+
     @Test func writesNotifyPeersAndAppChangesNotifyEveryone() async throws {
         let bridge = HAPBridge(info: testInfo)
         let aid = try await bridge.addAccessory(info: testInfo, services: [.switch(startIID: 1)])

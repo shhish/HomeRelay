@@ -11,7 +11,9 @@ HOMERELAY_TOKENS_FILE). The running service picks up changes immediately.
 """
 
 import argparse
+import contextlib
 import datetime
+import fcntl
 import hashlib
 import json
 import os
@@ -45,7 +47,23 @@ def save(tokens: list[dict]) -> None:
     os.replace(tmp, p)
 
 
+@contextlib.contextmanager
+def locked():
+    """Holds an exclusive lock across load-modify-save, so two commands
+    running at once can't undo each other's changes (a revoke coming back)."""
+    p = path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p.parent / ".tokens.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
 def add(name: str, read_only: bool) -> str:
+    with locked():
+        return _add(name, read_only)
+
+
+def _add(name: str, read_only: bool) -> str:
     tokens = load()
     if any(t["name"] == name for t in tokens):
         sys.exit(f"A token named '{name}' already exists; revoke it first.")
@@ -63,6 +81,11 @@ def add(name: str, read_only: bool) -> str:
 
 
 def revoke(name: str) -> bool:
+    with locked():
+        return _revoke(name)
+
+
+def _revoke(name: str) -> bool:
     tokens = load()
     kept = [t for t in tokens if t["name"] != name]
     if len(kept) == len(tokens):

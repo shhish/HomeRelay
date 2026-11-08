@@ -118,7 +118,8 @@ For multiple services of the same type on one accessory, assign each a permanent
 Keep service identities and the layout file stable. Do not reuse an old AID for
 a different logical State. Runtime additions/removals use throwing
 `addAccessory(..., aid:)` / `removeAccessory(aid:)`; optional
-`beginBatchUpdate()` / `endBatchUpdate()` groups a layout change into one c# update.
+`beginBatchUpdate()` / `endBatchUpdate()` groups a layout change into one c# update;
+`cancelBatchUpdate()` abandons a batch that failed part-way, restoring its starting layout.
 `AppleHAPService.start` also finishes startup provisioning. External pairing-store
 changes require `service.reAdvertise()`.
 

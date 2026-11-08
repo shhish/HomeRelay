@@ -172,7 +172,7 @@ def main() -> int:
             )
             return 0 if not failures else 1
 
-        ref = urllib.parse.quote(args.write)
+        ref = urllib.parse.quote(args.write, safe="")
         status, target = call(base, "GET", f"/api/v1/accessories/{ref}", token)
         check(
             f"find '{args.write}'",
@@ -182,6 +182,10 @@ def main() -> int:
         if status != 200:
             return 1
         before = target["state"]
+        original = before.get("on") if isinstance(before, dict) else None
+        if not isinstance(original, bool):
+            check(f"'{args.write}' has an on/off value to toggle", False, json.dumps(before)[:200])
+            return 1
 
         found, stop = threading.Event(), threading.Event()
         listener = threading.Thread(
@@ -189,19 +193,26 @@ def main() -> int:
         )
         listener.start()
         time.sleep(1)
-        status, after = call(base, "POST", f"/api/v1/accessories/{ref}/toggle", token)
-        check(
-            "toggle", status == 200, f"{before} -> {after.get('state') if status == 200 else after}"
-        )
-        check("change event delivered", found.wait(10))
-        stop.set()
-        time.sleep(1)
-        status, restored = call(base, "POST", f"/api/v1/accessories/{ref}/toggle", token)
-        check(
-            "toggle back",
-            status == 200,
-            f"now {restored.get('state') if status == 200 else restored}",
-        )
+        try:
+            status, after = call(base, "POST", f"/api/v1/accessories/{ref}/toggle", token)
+            check(
+                "toggle",
+                status == 200,
+                f"{before} -> {after.get('state') if status == 200 else after}",
+            )
+            check("change event delivered", found.wait(10))
+        finally:
+            stop.set()
+            time.sleep(1)
+            # Put back the value it started with, whatever happened above.
+            status, restored = call(
+                base, "POST", f"/api/v1/accessories/{ref}", token, {"on": original}
+            )
+            check(
+                "restore original value",
+                status == 200,
+                f"on={original}" if status == 200 else json.dumps(restored)[:200],
+            )
     finally:
         tokens.revoke(name)
 
