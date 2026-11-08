@@ -49,6 +49,14 @@ Use the names from the Home app (URL-encoded, and `Bedroom/Lamp` if two rooms bo
 
 If it shows up in the Home app, HomeRelay can see it, whether it's native HomeKit, **Matter**, **Thread**, Wi-Fi, a **Hue** bridge or something brought in through **Homebridge**.
 
+![Apple Home](https://img.shields.io/badge/Apple_Home-000000?style=flat-square&logo=apple&logoColor=white)
+![Matter](https://img.shields.io/badge/Matter-4B5563?style=flat-square)
+![Thread](https://img.shields.io/badge/Thread-4B5563?style=flat-square)
+![Philips Hue](https://img.shields.io/badge/Philips_Hue-0065D3?style=flat-square&logo=philipshue&logoColor=white)
+![Homebridge](https://img.shields.io/badge/Homebridge-491F59?style=flat-square&logo=homebridge&logoColor=white)
+![ESP32](https://img.shields.io/badge/ESP32_clients-E7352C?style=flat-square&logo=espressif&logoColor=white)
+![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi_clients-A22846?style=flat-square&logo=raspberrypi&logoColor=white)
+
 | Kind | What you can read and change |
 | --- | --- |
 | 💡 Lights | on/off, brightness, colour, colour temperature |
@@ -92,7 +100,14 @@ Only Apple devices can control an Apple Home, and HomeKit accessories can't be s
 
 ## Setup
 
-**You need:** a Mac on macOS 26+ that stays on and is signed in to the iCloud account that owns the Home, plus Xcode 26+, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and a paid Apple Developer account (HomeKit needs the HomeKit capability on your App ID).
+**You need:**
+
+- a Mac on macOS 26+ that stays on and is signed in to the iCloud account that owns the Home;
+- Xcode 26+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen);
+- a paid [Apple Developer Program](https://developer.apple.com/programs/) membership, with the HomeKit capability turned on for your App ID.
+
+> [!NOTE]
+> A free Apple account (Xcode's "Personal Team") can't build HomeRelay. Apple only gives Mac apps the HomeKit capability through the paid program ([macOS capability table](https://developer.apple.com/help/account/reference/supported-capabilities-macos)). The free tier allows HomeKit only in iPhone and iPad apps, with signing that expires every 7 days.
 
 ```bash
 cp Config/Local.xcconfig.example Config/Local.xcconfig   # your bundle prefix and team ID
