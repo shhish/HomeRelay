@@ -11,10 +11,10 @@ final class SQLiteDB {
         var description: String
     }
 
-    init(path: String) throws {
+    init(path: String, readOnly: Bool = false) throws {
         self.path = path
         var db: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX
+        let flags = (readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) | SQLITE_OPEN_NOMUTEX
         guard sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK, let db else {
             let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "out of memory"
             sqlite3_close(db)
@@ -60,6 +60,12 @@ final class SQLiteDB {
 
     var lastError: String { String(cString: sqlite3_errmsg(handle)) }
     var changes: Int { Int(sqlite3_changes(handle)) }
+
+    func quickCheck() throws -> Bool {
+        let stmt = try prepare("PRAGMA quick_check")
+        guard try stmt.step(), stmt.text(0) == "ok" else { return false }
+        return try !stmt.step()
+    }
 
     /// One row's first column as an integer, or nil when there is no row or it is NULL.
     func scalar(_ sql: String, _ args: [Value] = []) throws -> Int64? {

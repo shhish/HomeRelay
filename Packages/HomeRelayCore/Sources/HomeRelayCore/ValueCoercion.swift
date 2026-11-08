@@ -44,15 +44,17 @@ public enum ValueCoercion {
             guard let b = value.boolValue else { throw .unprocessable("Expected true/false, got \(describe(value))") }
             return .bool(b)
         case "int", "uint8", "uint16", "uint32", "uint64":
-            guard let d = numeric(value) else { throw .unprocessable("Expected a number, got \(describe(value))") }
-            let n = Int(clampAndSnap(d, spec).rounded())
+            guard let d = numeric(value), d.isFinite else { throw .unprocessable("Expected a finite number, got \(describe(value))") }
+            guard let n = Int(exactly: clampAndSnap(d, spec).rounded()) else { throw .unprocessable("Number is out of range") }
             if let valid = spec.validValues, !valid.isEmpty, !valid.contains(n) {
                 throw .unprocessable("\(n) is not allowed; valid values are \(valid.map(String.init).joined(separator: ", "))")
             }
             return .int(n)
         case "float":
-            guard let d = numeric(value) else { throw .unprocessable("Expected a number, got \(describe(value))") }
-            return .double(clampAndSnap(d, spec))
+            guard let d = numeric(value), d.isFinite else { throw .unprocessable("Expected a finite number, got \(describe(value))") }
+            let result = clampAndSnap(d, spec)
+            guard result.isFinite else { throw .unprocessable("Number is out of range") }
+            return .double(result)
         case "string":
             switch value {
             case .string(let s): return .string(s)

@@ -5,7 +5,7 @@ HomeRelay serves Apple Home on the local network from the Mac mini, so any devic
 - **Base URL:** `http://<mac>.local:18796/api/v1`, or the Mac's LAN IP on port 18796. IPv4 and IPv6 both work.
 - **Connections:** HTTP/1.1 keep-alive. A connection with no traffic for 2 minutes is closed; event streams stay open because of their keepalives.
 - **Discovery:** Bonjour/mDNS service `_homerelay._tcp`, TXT `api=/api/v1`.
-- **Auth:** `Authorization: Bearer <token>` on everything except `/health`. Create tokens with `scripts/homerelay-token add NAME`. Tokens are `control` (full access) or `--read-only` (`read`: GETs and events only).
+- **Auth:** `Authorization: Bearer <token>` on everything except GET `/health`, `/health/ready`, `/health/history` and `/health/bridge`. Create tokens with `scripts/homerelay-token add NAME`. Tokens are `control` (full access) or `--read-only` (`read`: reads and events; `/bridge` requires control).
 - **Format:** JSON in and out. Errors are `{"error": {"code": "...", "message": "...", "candidates": [...]}}`.
 
 ## Referring to things
@@ -28,6 +28,7 @@ Wherever a path takes `{ref}`, use an id or a name:
 | GET | `/accessories?room=&category=&refresh=1&compact=1` | read | Accessories, optionally filtered |
 | GET | `/accessories/{ref}` | read | One accessory, with values freshly read from the device (`?refresh=0` to use cached values) |
 | POST | `/accessories/{ref}` | control | Set values by name, e.g. `{"on": true, "brightness": 40}`; returns the accessory |
+| PATCH | `/accessories/{ref}` | control | Alias of POST `/accessories/{ref}` |
 | POST | `/accessories/{ref}/toggle` | control | Flip `on`, `active` or the lock, whichever the accessory has |
 | PUT | `/characteristics/{id}` | control | Low-level write: `{"value": ...}` to one characteristic by id |
 | GET | `/scenes` | read | Scenes as the Home app shows them |
@@ -35,15 +36,19 @@ Wherever a path takes `{ref}`, use an id or a name:
 | GET | `/events?accessory=ID,ID&since=SEQ` | read | Server-sent events stream of changes, resumable (see below) |
 | GET | `/events/stats?hours=24` | read | Event log size, position and event counts by type and origin over the window |
 | GET | `/states` | read | Virtual accessories ("States") and their values |
+| GET | `/states/{ref}` | read | One State by id, `state:<id>` or name |
 | GET | `/bridge` | control | HomeKit bridge status; while unpaired, its setup code and `X-HM://` payload |
 | POST | `/states` | control | Create one: `{"name": "Guest mode", "kind": "switch", "resetAfter": 3600}` |
 | PUT | `/states/{ref}` | control | `{"on": true}`; also `name` and `resetAfter` (seconds, or null) |
+| POST, PATCH | `/states/{ref}` | control | Aliases of PUT `/states/{ref}` |
 | DELETE | `/states/{ref}` | control | Remove a State |
 | GET | `/history/series?accessory=ID&type=` | read | Recorded series: id, characteristic id, kind, unit, names, first and last seen |
 | GET | `/history?series=ID,ID&from=&to=&step=auto` | read | Values over a time range (see History) |
 | GET | `/history/summary?series=ID&window=1h` | read | One series summarised over a recent window, up to `14d` |
 | GET | `/health/history` | none | History status; `503` when unhealthy (for monitors) |
 | GET | `/health/bridge` | none | `{"state":…,"reason"?}` for the HomeKit bridge (states as in `/health`); while failing, `reason` is `localNetwork`, `portInUse` or `other` and the status is `503` (for monitors). The setup code and full error are only in `GET /bridge` |
+
+Health routes accept GET only. Other methods, including HEAD, return `405 method_not_allowed` with `Allow: GET`; the server does not currently implement HEAD response semantics. Other routes support unauthenticated OPTIONS for CORS preflight.
 
 `refresh=1` reads from the devices any value that HomeKit isn't already keeping current through change notifications; values under notification are already live. Battery-powered devices are only read for values never seen before, since each read wakes the sensor (seconds of delay, and battery drain). A value that doesn't answer within 6 s is skipped, and not retried for 5 minutes, so one dead device doesn't slow every request. Vendor-defined (`custom.*`) values are never read; their `value` is whatever HomeKit last cached. Without `refresh`, values come from HomeKit's cache. In the background, values without notifications are re-read every 30 s, and mains-powered devices are fully re-read every 10 minutes.
 
@@ -74,7 +79,7 @@ Right after a write, a bridged device (Hue, Homebridge) can briefly report its p
 }
 ```
 
-`state` is the short version most clients need: characteristic type to value, primary service first, with device-information and vendor-specific values left out. `services` has everything, including ids and limits for building controls. Add `?compact=1` to `/accessories`, `/accessories/{ref}` or `/snapshot` to drop `services` and keep responses small (useful on the ESP32).
+`state` is the short version most clients need: characteristic type to value, primary service first, with device-information and vendor-specific values left out. `services` has everything, including ids and limits for building controls. Add `?compact=1` to `/accessories`, `/accessories/{ref}` or `/snapshot` to return `services: []` and keep responses small (useful on the ESP32); `state` and the other accessory fields remain.
 
 Vendor-defined services and characteristics (Hue, Ecobee, Eve and so on) have the type `custom.<first 8 hex digits of their UUID>`. `category` is what Apple reports, except that bridged accessories Apple calls `other` get a category from their main service.
 
@@ -123,7 +128,7 @@ data: {"type":"homes","seq":4185,…}
 
 ### Resuming
 
-Every event has a `seq` (also sent as the SSE `id:`) that keeps increasing across restarts. HomeRelay keeps the last 14 days of events on disk.
+Every recorded event has a `seq` (also sent as the SSE `id:`) that keeps increasing across restarts. Archived events are retained in the hot log for 14 days. Unarchived events wait for history, subject to the hot log's 2 GB logical-data cap: over the cap, oldest events are dropped even if they have not been archived. A failing disk also bounds the in-memory queue at 100,000 events.
 
 - Reconnect with `?since=<last seq you handled>`, or send it as `Last-Event-ID` (browsers' `EventSource` does this for you). Events after it are replayed, then the stream goes live with no duplicates.
 - Each install's log has an id, sent as the `X-HomeRelay-Store` response header and in `/events/stats`. Pass it back as `?store=<id>` and a position from a different install is treated as a `reset` rather than resumed.
@@ -138,6 +143,7 @@ data: {"type":"gap","missingFrom":1001,"missingTo":2000,"reason":"expired","stor
 
   `reason` is `expired` (older than the log keeps), `lost` (never written: a disk failure, or the last second before a crash) or `reset` (`since` is ahead of the log or `store` doesn't match, so it came from a different install; `missingTo` is absent). The range is in raw `seq` numbers and may include events your filter wouldn't have shown. After a gap, fetch `/snapshot` for current state.
 - Without `since`, the stream starts live, as before.
+- Sequence ranges are reserved durably before use. A crash can leave a larger `lost` gap than the number of events actually lost. If the log cannot reserve more numbers, new events are counted as dropped and are not streamed; `/health` reports `eventLog: "failing"` while the reservation error persists. Resume positions must be non-negative and below the maximum signed 64-bit integer; invalid positions return `400`.
 
 ## States
 
@@ -145,7 +151,8 @@ States are on/off values HomeRelay keeps itself, for things the house should rem
 
 - `{ref}` is the State's `id` (a slug of its first name, such as `guest-mode`), `state:<id>`, or its name.
 - A change is a `characteristic` event on accessory `state:<id>` (room `States`, characteristic `on`, characteristic id `state:<id>:on`), so the event log, history and routines treat States like any device. `origin` is `write`, `bridge` (the Home app) or `reset`.
-- `resetAfter` turns a State off that many seconds after it was turned on, even across restarts.
+- `resetAfter` is 1–86400 whole seconds or null. Its absolute deadline survives restarts: an overdue State is turned off at startup, and otherwise only the remaining delay is scheduled. Changing a non-null reset interval while on starts that interval from the update; clearing it cancels the timer. Older State files derive the deadline from `updatedAt`.
+- State ids are never reused after deletion; recreating a name allocates a new slug. States record their initial value and a startup sample for history. Periodic device sampling is app-owned; Core does not periodically sample States.
 - At most 149 States (one HomeKit bridge holds 150 accessories, one being the bridge). Each keeps its bridge accessory id (`aid`) for life, so the Home app keeps its room and automations.
 - **The HomeKit bridge** (`HOMERELAY_BRIDGE=1`) publishes every State as an accessory of a bridge called "HomeRelay States" on port 51827. Pair it once: Home app → Add Accessory → More options → HomeRelay States, then type the `setupCode` from `GET /bridge` (or scan `setupURI` rendered as a QR code). The pairing survives restarts and updates. A `contact` State reads open when on. The bridge needs Local Network access: if macOS denied it, allow HomeRelay under System Settings → Privacy & Security → Local Network and restart HomeRelay (macOS only rechecks at launch). While it can't start, `/health/bridge` answers 503 and `/health` says `"bridge":"failing"`.
 
@@ -155,13 +162,13 @@ With a history directory set up (`scripts/history-setup`), HomeRelay keeps every
 
 - **Series:** one per characteristic. `GET /history/series` lists them with a numeric `id`; anywhere a series is asked for, its `id` or the characteristic id works. `kind` is `numeric` (temperature, brightness), `binary` (motion, contact, on), `enum` (lock state, door state, modes) or `text`.
 - **`GET /history?series=ID,ID&from=&to=&step=`**: `from`/`to` are epoch milliseconds or ISO 8601 (defaults: the last 24 hours). `step` is `raw`, `5m`, `1h`, `1d` or `auto` (the finest that stays under about 2,000 points; raw up to 6 hours). Up to 20 series.
-  - `raw` returns `points`: `{"t": ms, "value": 21.5, "origin": "notification"}` (`text` instead of `value` for text series). Values from the last minute, not yet archived, are included.
+  - `raw` returns `points`: `{"t": ms, "value": 21.5, "origin": "notification"}` (`text` instead of `value` for text series). Values from the last minute, not yet archived, are included and merged by event sequence, including distinct events with identical timestamps and values. Responses contain at most 10,000 points per series and set `truncated: true` when more exist; database reads are bounded too. State origins `bridge` and `reset` are preserved.
   - Other steps return one entry in `buckets` per bucket from `from` to `to`: `n` (values recorded in it), `coverage` (seconds the value was known), `mean` (time-weighted), `min`, `max`, `last`, `lastMs`, `transitions`, plus `on` (seconds on) for binary and `states` (`{"0": 3600, "1": 120}`, seconds per state) for enum series. A value holds until the next one, so a quiet bucket still has a `mean`, with `n: 0`.
   - 5-minute and hourly buckets align to UTC; daily buckets start at local midnight.
   - `gaps` lists `[start, end]` ms ranges when HomeRelay wasn't running. Values don't carry across a gap.
 - **`GET /history/summary?series=ID&window=1h`**: the same summary fields over the last `window` (`90s`, `15m`, `1h`, `7d`; at most `14d`), plus `current` and `since`. For conditions such as "the garage has been open for 10 minutes" (`summary.on` ≥ 600) or "the average temperature over the last hour".
 - **Kept:** raw values 24 months, 5-minute buckets 5 years, hourly and daily buckets forever. A raw month is removed only after its hourly buckets account for every value in it and a backup copy exists.
-- `503 history_unavailable` means the history disk isn't there right now; nothing is lost, values wait in the event log.
+- `503 history_unavailable` means the history disk isn't available right now. Values wait in the event log while capacity permits; the hot-log cap and a persistently failing disk can cause loss as described above. History times outside years 1–9999 and overflowing duration inputs return `400`.
 
 ## Examples
 

@@ -41,7 +41,14 @@ public struct APIRouter: Sendable {
         var caller = "-"
         let response: HTTPResponse
         do {
-            if request.method == "OPTIONS" {
+            let healthRoute = request.segments == ["api", "v1", "health"]
+                || (request.segments.count == 4 && request.segments.prefix(3) == ["api", "v1", "health"]
+                    && ["ready", "history", "bridge"].contains(request.segments[3]))
+            if healthRoute && request.method != "GET" && request.method != "OPTIONS" {
+                var error = Self.errorResponse(APIError(status: 405, code: "method_not_allowed", message: "Use GET for health checks"))
+                error.headers.append(("Allow", "GET"))
+                response = error
+            } else if request.method == "OPTIONS" {
                 response = HTTPResponse(status: 204, headers: Self.corsHeaders + [("Access-Control-Max-Age", "600")])
             } else if request.segments == ["api", "v1", "health"] {
                 response = try await health(strict: false)
@@ -139,8 +146,8 @@ public struct APIRouter: Sendable {
             let resume = q["since"] ?? request.headers["last-event-id"]
             let since: Int64?
             if let resume, !resume.isEmpty {
-                guard let n = Int64(resume.trimmingCharacters(in: .whitespaces)), n >= 0 else {
-                    throw APIError.badRequest("since must be a non-negative event seq")
+                guard let n = Int64(resume.trimmingCharacters(in: .whitespaces)), n >= 0, n < Int64.max else {
+                    throw APIError.badRequest("since must be a non-negative event seq below Int64.max")
                 }
                 since = n
             } else {
@@ -287,7 +294,9 @@ public struct APIRouter: Sendable {
         case nil: return nil
         case .null?: return .some(nil)
         case .int(let n)?: return .some(n)
-        case .double(let d)? where d == d.rounded(): return .some(Int(d))
+        case .double(let d)? where d.isFinite && d == d.rounded():
+            guard let seconds = Int(exactly: d) else { throw .badRequest("resetAfter is out of range") }
+            return .some(seconds)
         default: throw .badRequest("resetAfter must be a whole number of seconds or null")
         }
     }
@@ -299,9 +308,13 @@ public struct APIRouter: Sendable {
 
     /// Epoch milliseconds or ISO 8601.
     static func parseTime(_ raw: String, name: String) throws(APIError) -> Int64 {
-        if let ms = Int64(raw) { return ms }
+        if let ms = Int64(raw) {
+            guard History.supportedTimes.contains(ms) else { throw .badRequest("\(name) is outside years 1 through 9999") }
+            return ms
+        }
         for style in [Date.ISO8601FormatStyle(includingFractionalSeconds: true), Date.ISO8601FormatStyle()] {
-            if let date = try? style.parse(raw) { return Int64((date.timeIntervalSince1970 * 1000).rounded()) }
+            if let date = try? style.parse(raw),
+               let ms = Int64(exactly: (date.timeIntervalSince1970 * 1000).rounded()), History.supportedTimes.contains(ms) { return ms }
         }
         throw .badRequest("\(name) must be epoch milliseconds or ISO 8601")
     }
@@ -312,7 +325,9 @@ public struct APIRouter: Sendable {
         guard let unit = raw.last, let scale = units[unit], let n = Int64(raw.dropLast()), n > 0 else {
             throw .badRequest("window must look like 90s, 15m, 1h or 7d")
         }
-        return .seconds(n * scale)
+        let (seconds, overflow) = n.multipliedReportingOverflow(by: scale)
+        guard !overflow else { throw .badRequest("window is out of range") }
+        return .seconds(seconds)
     }
 
     // MARK: - Events

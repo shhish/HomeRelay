@@ -34,6 +34,9 @@ public typealias SeriesMetaProvider = @Sendable ([String]) async -> [String: Ser
 /// copied. Recent-window summaries come from the event log, so they work even
 /// while the disk is away.
 public final class History: @unchecked Sendable {
+    // Keep Calendar calculations and range subtraction within supported dates.
+    static let supportedTimes: ClosedRange<Int64> = -62_135_596_800_000...253_402_300_799_999
+    static let rawPointLimit = 10_000
     public struct Settings: Sendable {
         public var archiveEvery: Duration = .seconds(60)
         /// Small batches keep each disk job short, so queries interleave.
@@ -469,6 +472,8 @@ public final class History: @unchecked Sendable {
             try recompute(dirty)
             let sessions = pendingSessions
             try writeSessions()
+            try db.run("INSERT INTO meta(key, value) VALUES ('archived_seq', ?) ON CONFLICT(key) DO UPDATE SET value = MAX(CAST(meta.value AS INTEGER), CAST(excluded.value AS INTEGER))",
+                       [.text(String(rows.last!.seq))])
             do {
                 try db.exec("COMMIT")
             } catch {
@@ -581,19 +586,21 @@ public final class History: @unchecked Sendable {
         return db
     }
 
-    private struct RawRow {
+    private struct RawRow: Sendable {
         var point: HistoryPoint
         var origin: Int64
+        var seq: Int64
     }
 
-    private func rawPoints(_ series: Int64, from: Int64, to: Int64) throws -> [RawRow] {
+    private func rawPoints(_ series: Int64, from: Int64, to: Int64, limit: Int? = nil, throughSeq: Int64 = .max) throws -> [RawRow] {
         var out: [RawRow] = []
         for month in Self.months(from: from, to: to - 1) {
+            if let limit, out.count >= limit { break }
             guard let db = try monthDB(month, create: false) else { continue }
-            let stmt = try db.prepare("SELECT ts_ms, value, value_text, origin FROM samples WHERE series_id = ? AND ts_ms >= ? AND ts_ms < ? ORDER BY ts_ms, seq")
-            try stmt.bind([.int(series), .int(from), .int(to)])
+            let stmt = try db.prepare("SELECT ts_ms, value, value_text, origin, seq FROM samples WHERE series_id = ? AND ts_ms >= ? AND ts_ms < ? AND seq <= ? ORDER BY ts_ms, seq LIMIT ?")
+            try stmt.bind([.int(series), .int(from), .int(to), .int(throughSeq), .int(limit.map { Int64($0 - out.count) } ?? -1)])
             while try stmt.step() {
-                out.append(RawRow(point: HistoryPoint(ts: stmt.int(0), value: stmt.isNull(1) ? nil : stmt.real(1), text: stmt.text(2)), origin: stmt.int(3)))
+                out.append(RawRow(point: HistoryPoint(ts: stmt.int(0), value: stmt.isNull(1) ? nil : stmt.real(1), text: stmt.text(2)), origin: stmt.int(3), seq: stmt.int(4)))
             }
         }
         return out
@@ -645,10 +652,12 @@ public final class History: @unchecked Sendable {
     /// under about 2,000 points per series).
     public func query(_ refs: [String], from: Int64, to: Int64, step requested: String) async throws -> Response {
         guard to > from else { throw APIError.badRequest("to must be after from") }
+        guard Self.supportedTimes.contains(from), Self.supportedTimes.contains(to) else {
+            throw APIError.badRequest("History times must be within years 1 through 9999")
+        }
         guard refs.count <= 20 else { throw APIError.badRequest("At most 20 series per request") }
         // Values not yet archived come from the event log.
-        let archived = state.withLock { $0.archivedThroughMs } ?? Int64.min
-        let response: Response = try await onQueueThrowing { [self] in
+        let (response, archivedSeq, raw): (Response, Int64, [[RawRow]]) = try await onQueueThrowing { [self] in
             guard openCold() else { throw APIError(status: 503, code: "history_unavailable", message: state.withLock { $0.lastError } ?? "History is off") }
             let byId = Dictionary(catalog.values.map { (String($0.id), $0) }, uniquingKeysWith: { a, _ in a })
             let records = try refs.map { ref -> SeriesRecord in
@@ -656,41 +665,36 @@ public final class History: @unchecked Sendable {
                 return r
             }
             let step = try chooseStep(requested, from: from, to: to, records: records)
+            let cursor = try rollups?.scalar("SELECT value FROM meta WHERE key = 'archived_seq'") ?? 0
             var out = Response(from: from, to: to, step: step?.rawValue ?? "raw", gaps: gaps(from: from, to: to), series: [])
+            var raw: [[RawRow]] = []
             for r in records {
                 if let step {
                     out.series.append(SeriesHistory(series: info(r), buckets: try buckets(r, step: step, from: from, to: to)))
                 } else {
-                    let rows = try rawPoints(r.id, from: from, to: to)
-                    let limit = 10_000
-                    out.series.append(SeriesHistory(
-                        series: info(r),
-                        points: rows.prefix(limit).map { RawPoint(t: $0.point.ts, value: $0.point.value, text: $0.point.text, origin: Self.originName($0.origin)) },
-                        truncated: rows.count > limit ? true : nil
-                    ))
+                    // Older cold stores have no cursor yet: include their raw
+                    // rows and deduplicate the hot overlap by seq below.
+                    raw.append(try rawPoints(r.id, from: from, to: to, limit: Self.rawPointLimit + 1, throughSeq: cursor == 0 ? .max : cursor))
+                    out.series.append(SeriesHistory(series: info(r)))
                 }
             }
-            return out
+            return (out, cursor, raw)
         }
-        guard response.step == "raw", to > archived else { return response }
+        guard response.step == "raw" else { return response }
         var merged = response
         for i in merged.series.indices {
             let cid = merged.series[i].series.characteristicId
-            let tail = await log.characteristicRows(cid, fromMs: max(from, archived + 1), toMs: to).rows
-            let points = tail.map { row -> RawPoint in
-                let p = HistoryPoint(ts: row.tsMs, json: row.event.value)
-                return RawPoint(t: p.ts, value: p.value, text: p.text, origin: row.event.origin)
+            let tail = await log.characteristicRows(cid, fromMs: from, toMs: to, afterSeq: archivedSeq, limit: Self.rawPointLimit + 1).rows
+            var known = Set(raw[i].map(\.seq))
+            var combined = raw[i]
+            for row in tail where known.insert(row.seq).inserted {
+                combined.append(RawRow(point: HistoryPoint(ts: row.tsMs, json: row.event.value), origin: Self.originCode(row.event.origin), seq: row.seq))
             }
-            // The archive cursor can move between the two reads; drop exact repeats.
-            let known = Set((merged.series[i].points ?? []).map { "\($0.t)|\($0.origin ?? "")|\($0.value.map { String($0) } ?? $0.text ?? "")" })
-            var combined = (merged.series[i].points ?? []) + points.filter {
-                !known.contains("\($0.t)|\($0.origin ?? "")|\($0.value.map { String($0) } ?? $0.text ?? "")")
+            combined.sort { ($0.point.ts, $0.seq) < ($1.point.ts, $1.seq) }
+            merged.series[i].truncated = combined.count > Self.rawPointLimit ? true : nil
+            merged.series[i].points = combined.prefix(Self.rawPointLimit).map {
+                RawPoint(t: $0.point.ts, value: $0.point.value, text: $0.point.text, origin: Self.originName($0.origin))
             }
-            if combined.count > 10_000 {
-                combined = Array(combined.prefix(10_000))
-                merged.series[i].truncated = true
-            }
-            merged.series[i].points = combined
         }
         return merged
     }
@@ -823,7 +827,6 @@ public final class History: @unchecked Sendable {
         let waiting = await log.oldestUnarchivedMs() ?? .max
         await onQueue { [self] in
             guard openCold(), let db = rollups else { return }
-            lastMaintenanceDay = Self.dayStamp(clock(), zone)
             let now = Self.ms(clock())
             do {
                 let cutoff5m = now - Int64(settings.fiveMinuteDays) * 86_400_000
@@ -831,6 +834,7 @@ public final class History: @unchecked Sendable {
                 try backup(now: now, settledBefore: waiting)
                 try db.run("DELETE FROM rollup_5m WHERE bucket_ms < ?", [.int(cutoff5m)])
                 try expireRawMonths(now: now)
+                lastMaintenanceDay = Self.dayStamp(clock(), zone)
             } catch {
                 failed(error)
             }
@@ -847,8 +851,8 @@ public final class History: @unchecked Sendable {
         for file in files.sorted() where file.hasSuffix(".sqlite") {
             let month = String(file.dropLast(".sqlite".count))
             guard month < oldestKept, let raw = try monthDB(month, create: false) else { continue }
-            if let backups, !FileManager.default.fileExists(atPath: backups.appending(path: "raw/\(file)").path) {
-                logger("History: keeping raw \(month) until it has a backup copy")
+            guard let backups, completedBackup(backups.appending(path: "raw/\(file)"), source: raw, tables: ["samples", "reachability"]) else {
+                logger("History: keeping raw \(month) until it has a verified, completed backup copy")
                 continue
             }
             let (start, end) = Self.monthRange(month)
@@ -872,23 +876,46 @@ public final class History: @unchecked Sendable {
         guard let backups, let db = rollups else { return }
         let fm = FileManager.default
         try fm.createDirectory(at: backups.appending(path: "raw"), withIntermediateDirectories: true)
+        // Only our temporary names are disposable. They are never candidates
+        // for retention and a crash can leave one in either output directory.
+        for directory in [backups, backups.appending(path: "raw")] {
+            for name in try fm.contentsOfDirectory(atPath: directory.path)
+                where name.hasPrefix(".homerelay-backup-")
+                    && [".tmp", ".tmp-journal", ".tmp-wal", ".tmp-shm"].contains(where: { name.hasSuffix($0) }) {
+                try fm.removeItem(at: directory.appending(path: name))
+            }
+        }
         let stamp = Self.dayStamp(Date(timeIntervalSince1970: Double(now) / 1000), zone)
         let current = Self.month(now)
-        func vacuum(_ source: SQLiteDB, to url: URL) throws {
-            guard !fm.fileExists(atPath: url.path) else { return }
-            try source.run("VACUUM INTO ?", [.text(url.path)])
+        func vacuum(_ source: SQLiteDB, to url: URL, tables: [String]) throws {
+            guard !completedBackup(url, source: source, tables: tables) else { return }
+            let temp = url.deletingLastPathComponent().appending(path: ".homerelay-backup-\(UUID().uuidString).tmp")
+            defer { try? fm.removeItem(at: temp) }
+            try source.run("VACUUM INTO ?", [.text(temp.path)])
+            do {
+                let copy = try SQLiteDB(path: temp.path)
+                guard try copy.quickCheck() else { throw SQLiteDB.Failure(description: "History backup integrity check failed") }
+                // Old final files made before atomic backups have no completion
+                // marker and are rebuilt rather than trusted for deletion.
+                try copy.exec("CREATE TABLE IF NOT EXISTS homerelay_backup (store_id TEXT PRIMARY KEY, completed INTEGER NOT NULL)")
+                try copy.run("INSERT OR REPLACE INTO homerelay_backup(store_id, completed) VALUES (?, 1)", [.text(log.storeId)])
+            }
+            guard completedBackup(temp, source: source, tables: tables) else {
+                throw SQLiteDB.Failure(description: "History backup verification failed")
+            }
+            guard rename(temp.path, url.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
         }
-        try vacuum(db, to: backups.appending(path: "rollups-\(stamp).sqlite"))
+        try vacuum(db, to: backups.appending(path: "rollups-\(stamp).sqlite"), tables: [])
         if let raw = try monthDB(current, create: false) {
-            try vacuum(raw, to: backups.appending(path: "raw-current-\(stamp).sqlite"))
+            try vacuum(raw, to: backups.appending(path: "raw-current-\(stamp).sqlite"), tables: [])
         }
         if let dir {
             let files = (try? fm.contentsOfDirectory(atPath: dir.appending(path: "history/raw").path)) ?? []
             for file in files where file.hasSuffix(".sqlite") && String(file.dropLast(7)) < current {
                 guard Self.monthRange(String(file.dropLast(7))).1 <= settledBefore else { continue }
                 let target = backups.appending(path: "raw/\(file)")
-                if !fm.fileExists(atPath: target.path), let raw = try monthDB(String(file.dropLast(7)), create: false) {
-                    try vacuum(raw, to: target)
+                if let raw = try monthDB(String(file.dropLast(7)), create: false) {
+                    try vacuum(raw, to: target, tables: ["samples", "reachability"])
                 }
             }
         }
@@ -899,6 +926,20 @@ public final class History: @unchecked Sendable {
                 try? fm.removeItem(at: backups.appending(path: old))
             }
         }
+    }
+
+    /// Opening read-only prevents verification from creating a missing backup.
+    /// Closed-month counts also catch a backup that predates late archiving.
+    private func completedBackup(_ url: URL, source: SQLiteDB, tables: [String]) -> Bool {
+        do {
+            let copy = try SQLiteDB(path: url.path, readOnly: true)
+            guard try copy.quickCheck(),
+                  try copy.scalar("SELECT completed FROM homerelay_backup WHERE store_id = ?", [.text(log.storeId)]) == 1 else { return false }
+            for table in tables {
+                guard try copy.scalar("SELECT COUNT(*) FROM \(table)") == source.scalar("SELECT COUNT(*) FROM \(table)") else { return false }
+            }
+            return true
+        } catch { return false }
     }
 
     // MARK: - Helpers
@@ -929,7 +970,7 @@ public final class History: @unchecked Sendable {
         return stat(path, &info) == 0 ? UInt64(info.st_dev) : nil
     }
 
-    static let origins = ["notification", "poll", "sample", "write", "scene"]
+    static let origins = ["notification", "poll", "sample", "write", "scene", "bridge", "reset"]
     static func originCode(_ origin: String?) -> Int64 { origins.firstIndex(of: origin ?? "").map { Int64($0 + 1) } ?? 0 }
     static func originName(_ code: Int64) -> String? { code >= 1 && code <= origins.count ? origins[Int(code) - 1] : nil }
 

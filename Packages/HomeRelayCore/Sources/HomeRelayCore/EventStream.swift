@@ -96,7 +96,8 @@ actor EventStreamSession {
         if since > latest || (store != nil && store != log.storeId) {
             // The client's position is from another (or a reset) log.
             cursor = latest
-            return gap(from: since + 1, to: nil, reason: "reset")
+            // The router rejects Int64.max; also keep internal callers safe.
+            return gap(from: since == .max ? .max : since + 1, to: nil, reason: "reset")
         }
         cursor = since
         replaying = true

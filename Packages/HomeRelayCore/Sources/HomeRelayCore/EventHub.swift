@@ -41,6 +41,9 @@ public final class EventHub: Sendable {
     public func publish(_ event: HomeEvent) -> HomeEvent {
         state.withLock { s in
             let numbered = log?.append(event) ?? event
+            // An exhausted/unwritable reservation must not leak an unreserved
+            // sequence (or an unresumable live event) to subscribers.
+            if log != nil && numbered.seq == nil { return numbered }
             let item = HubItem(event: numbered, previous: s.lastPublished)
             s.lastPublished = numbered.seq
             for continuation in s.subscribers.values { continuation.yield(item) }

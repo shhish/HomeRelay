@@ -97,6 +97,9 @@ public enum RefResolver {
                     && ($0.room ?? "").caseInsensitiveCompare(String(room)) == .orderedSame
             }
             if matches.count == 1 { return matches[0] }
+            if matches.count > 1 {
+                throw .ambiguous("\(matches.count) \(kind)s match '\(trimmed)'; use an id", candidates: matches.map(\.label))
+            }
         }
         throw .notFound("No \(kind) matches '\(trimmed)'")
     }

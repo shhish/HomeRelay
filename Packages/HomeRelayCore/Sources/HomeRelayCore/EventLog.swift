@@ -6,9 +6,10 @@ import Synchronization
 /// on the internal disk. Clients resume `/events` from it, and the history
 /// archiver copies from it.
 ///
-/// `append` is synchronous and cheap: it numbers the event and queues it. A
-/// timer writes the queue in one transaction per second, so a crash loses at
-/// most about a second of events. All SQLite work happens on one serial queue.
+/// `append` normally numbers and queues an event in memory; starting a new
+/// sequence block synchronously commits its reservation first. A timer flushes
+/// once per second. I/O failures can extend that crash-loss window. All SQLite
+/// work happens on one serial queue.
 public final class EventLog: @unchecked Sendable {
     public struct Settings: Sendable {
         /// Archived rows older than this are deleted.
@@ -49,6 +50,7 @@ public final class EventLog: @unchecked Sendable {
 
     private struct State {
         var nextSeq: Int64
+        var reservedThrough: Int64
         var pending: [Pending] = []
         var dropped: Int64 = 0
         var droppedAt: Int64?
@@ -66,12 +68,15 @@ public final class EventLog: @unchecked Sendable {
     private let db: SQLiteDB
     private let sessionId: Int64
     private let state: Mutex<State>
+    // Serializes allocation/reservation without holding `state` while waiting
+    // on SQLite (the flush queue also needs that lock).
+    private let allocation = Mutex(())
     private var timers: [DispatchSourceTimer] = []
     private var lastHeartbeat = Date.distantPast
     /// Upper bound on queued events if the disk keeps failing; past it the
     /// oldest are dropped rather than growing memory without limit.
     private static let maxPending = 100_000
-    /// Far more events than arrive between two flushes.
+    /// Reservation block size, and the migration margin for old unclean logs.
     static let uncleanSkip: Int64 = 10_000
     private static let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -91,7 +96,7 @@ public final class EventLog: @unchecked Sendable {
         let db = try SQLiteDB(path: path.path)
         try db.exec("""
             PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
+            PRAGMA synchronous = FULL;
             CREATE TABLE IF NOT EXISTS events (
                 seq INTEGER PRIMARY KEY,
                 ts_ms INTEGER NOT NULL,
@@ -125,27 +130,35 @@ public final class EventLog: @unchecked Sendable {
             // `last_seq` survives retention deleting every row, so numbers are never reused.
             let fromMeta = try Self.meta(db, "last_seq").flatMap { Int64($0) } ?? 0
             let fromRows = try db.scalar("SELECT MAX(seq) FROM events") ?? 0
-            var next = max(fromMeta, fromRows) + 1
+            let last = max(fromMeta, fromRows)
+            var highWater = max(last, try Self.meta(db, "reserved_seq").flatMap(Int64.init) ?? 0)
             // A session still open means the last run ended without saying so.
-            // Numbers it handed out in its last second were streamed but never
-            // written; skip past them so no client holds a seq that now means
-            // a different event. Replays show the skipped range as `lost`.
+            // Skip its durable reservation, including numbers it streamed but
+            // never flushed. Preserve the old margin when migrating an unclean
+            // log from before reservations. Replays show the hole as `lost`.
             try db.run("UPDATE sessions SET stopped_ms = alive_ms, reason = 'unclean' WHERE stopped_ms IS NULL")
-            if db.changes > 0 { next += Self.uncleanSkip }
+            if db.changes > 0 {
+                let (margin, overflow) = last.addingReportingOverflow(Self.uncleanSkip)
+                highWater = max(highWater, overflow ? Int64.max - 1 : margin)
+            }
+            guard highWater < Int64.max - 1 else { throw SQLiteDB.Failure(description: "Event sequence numbers are exhausted") }
+            let next = highWater + 1
+            try db.run("INSERT INTO meta(key, value) VALUES ('reserved_seq', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                       [.text(String(highWater))])
             try db.run("INSERT INTO sessions(started_ms, alive_ms, first_seq) VALUES (?, ?, ?)", [.int(now), .int(now), .int(next)])
             return (store!, next, try db.scalar("SELECT last_insert_rowid()") ?? 0)
         }
         self.db = db
         self.storeId = store
         self.sessionId = session
-        self.state = Mutex(State(nextSeq: next))
+        self.state = Mutex(State(nextSeq: next, reservedThrough: next - 1))
         self.lastHeartbeat = clock()
     }
 
     /// Starts the flush and maintenance timers.
     public func start() {
         queue.async { [self] in
-            guard timers.isEmpty else { return }
+            guard timers.isEmpty, !state.withLock({ $0.closed }) else { return }
             timers = [
                 timer(every: settings.flushEvery) { $0.flushOnQueue() },
                 timer(every: settings.maintainEvery) { $0.maintainOnQueue() },
@@ -156,48 +169,101 @@ public final class EventLog: @unchecked Sendable {
     /// Writes what's queued and marks this session as stopped.
     public func close(reason: String = "stopped") {
         queue.sync {
+            state.withLock { $0.closed = true }
             timers.forEach { $0.cancel() }
             timers = []
-            flushOnQueue()
-            try? db.run("UPDATE sessions SET alive_ms = ?, stopped_ms = ?, reason = ? WHERE id = ?",
-                        [.int(Self.ms(clock())), .int(Self.ms(clock())), .text(reason), .int(sessionId)])
-            state.withLock { $0.closed = true }
+            guard flushOnQueue() else { return }
+            do {
+                try db.transaction {
+                    // Only this still-open session may release its unused reservation.
+                    let open = try db.scalar("SELECT COUNT(*) FROM sessions WHERE stopped_ms IS NULL") ?? 0
+                    let ours = try db.scalar("SELECT COUNT(*) FROM sessions WHERE id = ? AND stopped_ms IS NULL", [.int(sessionId)]) ?? 0
+                    if open == 1, ours == 1 {
+                        let issued = state.withLock { $0.nextSeq - 1 }
+                        try db.run("UPDATE meta SET value = ? WHERE key = 'reserved_seq'", [.text(String(issued))])
+                    }
+                    try db.run("UPDATE sessions SET alive_ms = ?, stopped_ms = ?, reason = ? WHERE id = ?",
+                               [.int(Self.ms(clock())), .int(Self.ms(clock())), .text(reason), .int(sessionId)])
+                }
+            } catch {
+                state.withLock { $0.lastError = "\(error)" }
+                log("Event log close failed: \(error)")
+            }
         }
     }
 
     // MARK: - Writing
 
-    /// Numbers `event`, queues it for the next write and returns it with `seq` set.
+    /// Numbers and queues `event`. A nil seq means allocation failed or the log
+    /// is closed; EventHub must not stream that event.
     func append(_ event: HomeEvent) -> HomeEvent {
         let now = Self.ms(clock())
-        return state.withLock { s in
-            var numbered = event
-            numbered.seq = s.nextSeq
-            s.nextSeq += 1
-            s.pending.append(Pending(seq: numbered.seq!, tsMs: now, event: numbered))
-            if s.pending.count > Self.maxPending {
-                let excess = s.pending.count - Self.maxPending
-                s.pending.removeFirst(excess)
-                s.dropped += Int64(excess)
-                s.droppedAt = now
+        return allocation.withLock { _ in
+            var unnumbered = event
+            unnumbered.seq = nil
+            let position = state.withLock { ($0.nextSeq, $0.reservedThrough, $0.closed) }
+            guard !position.2 else { return unnumbered }
+            if position.0 > position.1 {
+                // The reservation must reach durable storage before any number
+                // in it can escape, even if later event flushes keep failing.
+                let reserved = queue.sync { () -> Bool in
+                    guard !state.withLock({ $0.closed }) else { return false }
+                    do {
+                        let range = try db.transaction { () throws -> (Int64, Int64) in
+                            let saved = try Self.meta(db, "reserved_seq").flatMap(Int64.init) ?? 0
+                            guard saved < Int64.max - 1 else { throw SQLiteDB.Failure(description: "Event sequence numbers are exhausted") }
+                            let first = max(position.0, saved + 1)
+                            let (end, overflow) = first.addingReportingOverflow(Self.uncleanSkip - 1)
+                            let last = overflow ? Int64.max - 1 : min(end, Int64.max - 1)
+                            try db.run("INSERT INTO meta(key, value) VALUES ('reserved_seq', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                                       [.text(String(last))])
+                            return (first, last)
+                        }
+                        state.withLock { $0.nextSeq = range.0; $0.reservedThrough = range.1 }
+                        return true
+                    } catch {
+                        state.withLock {
+                            $0.lastError = "\(error)"
+                            $0.dropped += 1
+                            $0.droppedAt = now
+                        }
+                        log("Event log sequence reservation failed: \(error)")
+                        return false
+                    }
+                }
+                guard reserved else { return unnumbered }
             }
-            return numbered
+            return state.withLock { s in
+                guard !s.closed, s.nextSeq < Int64.max else { return unnumbered }
+                var numbered = event
+                numbered.seq = s.nextSeq
+                s.nextSeq += 1
+                s.pending.append(Pending(seq: numbered.seq!, tsMs: now, event: numbered))
+                if s.pending.count > Self.maxPending {
+                    let excess = s.pending.count - Self.maxPending
+                    s.pending.removeFirst(excess)
+                    s.dropped += Int64(excess)
+                    s.droppedAt = now
+                }
+                return numbered
+            }
         }
     }
 
     /// Writes queued events now. The timer does this every second.
     public func flush() {
-        queue.sync { flushOnQueue() }
+        queue.sync { _ = flushOnQueue() }
     }
 
-    private func flushOnQueue() {
+    @discardableResult
+    private func flushOnQueue() -> Bool {
         let batch = state.withLock { s -> [Pending] in
             defer { s.pending = [] }
             return s.pending
         }
         let now = clock()
         let heartbeat = now.timeIntervalSince(lastHeartbeat) >= Double(settings.heartbeatEvery.components.seconds)
-        guard !batch.isEmpty || heartbeat else { return }
+        guard !batch.isEmpty || heartbeat else { return true }
         do {
             try db.transaction {
                 if !batch.isEmpty {
@@ -212,13 +278,14 @@ public final class EventLog: @unchecked Sendable {
                         ])
                         while try insert.step() {}
                     }
-                    try db.run("INSERT INTO meta(key, value) VALUES ('last_seq', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    try db.run("INSERT INTO meta(key, value) VALUES ('last_seq', ?) ON CONFLICT(key) DO UPDATE SET value = MAX(CAST(meta.value AS INTEGER), CAST(excluded.value AS INTEGER))",
                                [.text(String(batch.last!.seq))])
                 }
                 try db.run("UPDATE sessions SET alive_ms = ? WHERE id = ?", [.int(Self.ms(now)), .int(sessionId)])
             }
             lastHeartbeat = now
             state.withLock { $0.lastError = nil }
+            return true
         } catch {
             // Put the batch back in front of anything queued since; the next tick retries.
             state.withLock { s in
@@ -226,6 +293,7 @@ public final class EventLog: @unchecked Sendable {
                 if s.lastError == nil { log("Event log write failed: \(error)") }
                 s.lastError = "\(error)"
             }
+            return false
         }
     }
 
@@ -363,7 +431,7 @@ public final class EventLog: @unchecked Sendable {
 
     /// One characteristic's events between `fromMs` (exclusive of the value in
     /// force before it, returned as `prior`) and `toMs`, samples included.
-    public func characteristicRows(_ id: String, fromMs: Int64, toMs: Int64) async -> (prior: Row?, rows: [Row]) {
+    public func characteristicRows(_ id: String, fromMs: Int64, toMs: Int64, afterSeq: Int64? = nil, limit: Int? = nil) async -> (prior: Row?, rows: [Row]) {
         await onQueue { [self] in
             flushOnQueue()
             let prior = rows("""
@@ -371,9 +439,9 @@ public final class EventLog: @unchecked Sendable {
                 ORDER BY ts_ms DESC, seq DESC LIMIT 1
                 """, [.text(id), .int(fromMs)]).first
             let inRange = rows("""
-                SELECT seq, ts_ms, json FROM events WHERE characteristic_id = ? AND type = 'characteristic' AND ts_ms >= ? AND ts_ms < ?
-                ORDER BY ts_ms, seq
-                """, [.text(id), .int(fromMs), .int(toMs)])
+                SELECT seq, ts_ms, json FROM events WHERE characteristic_id = ? AND type = 'characteristic' AND ts_ms >= ? AND ts_ms < ? AND seq > ?
+                ORDER BY ts_ms, seq LIMIT ?
+                """, [.text(id), .int(fromMs), .int(toMs), .int(afterSeq ?? 0), .int(limit.map(Int64.init) ?? -1)])
             return (prior, inRange)
         }
     }
